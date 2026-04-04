@@ -58,7 +58,7 @@ async def chat(req: ChatRequest):
                     temperature=req.temperature,
                     max_tokens=req.max_tokens,
                 ):
-                    data = json.dumps({"token": token}, ensure_ascii=False)
+                    data = json.dumps({"content": token}, ensure_ascii=False)
                     yield f"data: {data}\n\n"
                 yield "data: [DONE]\n\n"
             except Exception as exc:
