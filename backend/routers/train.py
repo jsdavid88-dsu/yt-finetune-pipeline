@@ -17,7 +17,7 @@ async def gpu_check():
 @router.get("/models")
 async def list_models():
     return [
-        {"id": "unsloth/gemma-4-12b-it-bnb-4bit", "name": "Gemma 4 12B (4-bit) ⭐ 추천", "params": "12B"},
+        {"id": "unsloth/gemma-4-12b-it-bnb-4bit", "name": "Gemma 4 12B (4-bit) [추천]", "params": "12B"},
         {"id": "unsloth/gemma-4-27b-it-bnb-4bit", "name": "Gemma 4 27B (4-bit)", "params": "27B"},
         {"id": "unsloth/gemma-3-4b-it-bnb-4bit", "name": "Gemma 3 4B (4-bit)", "params": "4B"},
         {"id": "unsloth/llama-3.1-8b-bnb-4bit", "name": "LLaMA 3.1 8B (4-bit)", "params": "8B"},

@@ -15,7 +15,8 @@
       "Bash(taskkill //PID 70068 //F)",
       "Bash(taskkill //PID 118384 //F)",
       "Bash(taskkill //PID 53476 //F)",
-      "Bash(taskkill //PID 255984 //F)"
+      "Bash(taskkill //PID 255984 //F)",
+      "Bash(find \"D:/Projects/yt-finetune-pipeline/backend\" -name \"__pycache__\" -type d -exec rm -rf {} +)"
     ]
   }
 }
