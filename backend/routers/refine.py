@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,8 @@ from services.refine_service import (
     chunk_text as rs_chunk_text,
     tag_chunk as rs_tag_chunk,
     build_jsonl_line,
+    summarize_episode,
+    build_hierarchical_jsonl,
 )
 
 router = APIRouter(prefix="/api/refine", tags=["refine"])
@@ -106,7 +109,7 @@ async def _run_auto_process(
     chunk_size: int | None = None,
     model: str | None = None,
 ) -> None:
-    """Background: chunk → tag → build JSONL."""
+    """Background: split episodes → chunk → tag → summarize → build hierarchical JSONL."""
     job.status = JobStatus.running
     try:
         # Load preset defaults for this project
@@ -130,37 +133,95 @@ async def _run_auto_process(
             job.error = "raw.txt가 비어 있습니다."
             return
 
-        # Step 1: Chunk
-        text_chunks = rs_chunk_text(raw_text, effective_chunk_size)
-        job.total = len(text_chunks)
-        job.chunks = [
-            ChunkData(index=i, text=c) for i, c in enumerate(text_chunks)
-        ]
+        # Split raw text into episodes by VIDEO markers
+        episode_pattern = re.compile(
+            r"--- VIDEO: (.+?) ---\n(.*?)(?=--- END VIDEO ---|$)",
+            re.DOTALL,
+        )
+        episodes = episode_pattern.findall(raw_text)
 
-        # Step 2: Tag each chunk sequentially
-        for i, chunk_obj in enumerate(job.chunks):
-            try:
-                tags = await rs_tag_chunk(chunk_obj.text, model=effective_model, prompt_template=tag_prompt)
-                chunk_obj.tags = ChunkTag(**tags)
-            except RuntimeError as exc:
-                # Ollama not running
-                job.status = JobStatus.failed
-                job._finished_at = time.time()
-                job.error = str(exc)
-                return
-            except Exception:
-                chunk_obj.tags = ChunkTag(
-                    genre="미분류", topic="미분류", mood="미분류", scene_type="미분류"
-                )
-            job.processed = i + 1
+        if not episodes:
+            # Fallback: treat entire text as one episode
+            episodes = [("전체", raw_text)]
 
-        # Step 3: Build JSONL
+        # First pass: chunk all episodes to determine total count
+        episode_chunks_map: list[tuple[str, list[str]]] = []
+        total_chunks = 0
+        for ep_title, ep_text in episodes:
+            ep_chunks = rs_chunk_text(ep_text.strip(), effective_chunk_size)
+            episode_chunks_map.append((ep_title, ep_chunks))
+            total_chunks += len(ep_chunks)
+
+        job.total = total_chunks
+        job.chunks = []
+
+        # Step 1 & 2: For each episode, chunk → tag
+        global_index = 0
+        all_episode_data: list[dict] = []  # Per-episode collected data
+
+        for ep_title, ep_chunks in episode_chunks_map:
+            episode_tagged_chunks: list[dict] = []
+
+            for chunk_text in ep_chunks:
+                chunk_obj = ChunkData(index=global_index, text=chunk_text)
+                job.chunks.append(chunk_obj)
+
+                try:
+                    tags = await rs_tag_chunk(chunk_obj.text, model=effective_model, prompt_template=tag_prompt)
+                    chunk_obj.tags = ChunkTag(**tags)
+                except RuntimeError as exc:
+                    # Ollama not running
+                    job.status = JobStatus.failed
+                    job._finished_at = time.time()
+                    job.error = str(exc)
+                    return
+                except Exception:
+                    chunk_obj.tags = ChunkTag(
+                        genre="미분류", topic="미분류", mood="미분류", scene_type="미분류"
+                    )
+
+                global_index += 1
+                job.processed = global_index
+
+                tags_dict = chunk_obj.tags.model_dump() if chunk_obj.tags else {}
+                episode_tagged_chunks.append({
+                    "text": chunk_obj.text,
+                    "tags": tags_dict,
+                })
+
+            # Step 3: Summarize each episode (one Ollama call per episode)
+            ep_full_text = "\n\n".join(ep_chunks)
+            episode_summary = await summarize_episode(ep_full_text, ep_title, model=effective_model)
+
+            all_episode_data.append({
+                "title": ep_title,
+                "summary": episode_summary,
+                "chunks": episode_tagged_chunks,
+            })
+
+        # Step 4: Build hierarchical JSONL and chunks.json
         jsonl_lines: list[str] = []
         chunks_json: list[dict] = []
-        for c in job.chunks:
-            tags_dict = c.tags.model_dump() if c.tags else {}
-            chunks_json.append({"index": c.index, "text": c.text, "tags": tags_dict})
-            jsonl_lines.append(build_jsonl_line(c.text, tags_dict))
+        chunk_idx = 0
+
+        for ep_data in all_episode_data:
+            # Build 3-level hierarchical JSONL for this episode
+            ep_lines = build_hierarchical_jsonl(
+                ep_data["title"],
+                ep_data["summary"],
+                ep_data["chunks"],
+            )
+            jsonl_lines.extend(ep_lines)
+
+            # Build chunks.json with episode field
+            for c in ep_data["chunks"]:
+                chunks_json.append({
+                    "index": chunk_idx,
+                    "text": c["text"],
+                    "tags": c["tags"],
+                    "episode": ep_data["title"],
+                })
+                chunk_idx += 1
 
         # Save outputs
         proj_dir.mkdir(parents=True, exist_ok=True)
