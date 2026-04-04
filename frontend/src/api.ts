@@ -58,6 +58,12 @@ export async function getPlaylistInfo(
   });
 }
 
+export async function getProjectVideos(
+  projectId: string
+): Promise<{ videos: any[] }> {
+  return request(`/api/collect/videos/${projectId}`);
+}
+
 // ── Refine ───────────────────────────────────────────────
 export async function refineDeduplicate(
   projectId: string,

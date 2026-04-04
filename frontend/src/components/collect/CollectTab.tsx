@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import type { Project, Video } from '../../types';
-import { collectStart, collectStatus, getPlaylistInfo } from '../../api';
+import { collectStart, collectStatus, getPlaylistInfo, getProjectVideos } from '../../api';
 import UrlInput from './UrlInput';
 import VideoList from './VideoList';
 import TextPreview from './TextPreview';
@@ -25,6 +25,22 @@ export default function CollectTab({ project, addLog, videos, setVideos }: Props
       if (pollRef.current) clearInterval(pollRef.current);
     };
   }, []);
+
+  // Load existing videos when project changes
+  useEffect(() => {
+    if (!project) return;
+    getProjectVideos(project.id).then((res) => {
+      const mapped = (res.videos || []).map((v: any) => ({
+        id: v.video_id || v.id,
+        title: v.title,
+        url: '',
+        status: v.status,
+        text: v.text || '',
+        error: v.error,
+      }));
+      setVideos(mapped);
+    }).catch(() => {});
+  }, [project?.id]);
 
   const handlePreviewPlaylist = async (url: string) => {
     if (!project) {
@@ -95,7 +111,23 @@ export default function CollectTab({ project, addLog, videos, setVideos }: Props
             setJobId(null);
             if (status.status === 'completed') {
               setProgressText('');
-              addLog('success', `수집 완료: ${total}개 동영상`);
+              // Reload all videos from project (includes previously collected)
+              if (project) {
+                getProjectVideos(project.id).then((res) => {
+                  const all = (res.videos || []).map((v: any) => ({
+                    id: v.video_id || v.id,
+                    title: v.title,
+                    url: '',
+                    status: v.status,
+                    text: v.text || '',
+                    error: v.error,
+                  }));
+                  setVideos(all);
+                  addLog('success', `수집 완료: 총 ${all.length}개 동영상`);
+                }).catch(() => {
+                  addLog('success', `수집 완료: ${total}개 동영상`);
+                });
+              }
             } else {
               setProgressText('');
               addLog('error', '수집 작업 실패');

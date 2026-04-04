@@ -2,13 +2,9 @@
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 
-# Ensure the backend package root is on sys.path so that absolute imports
-# like `from models.schemas import ...` work when running with uvicorn from
-# the backend/ directory.
 _BACKEND_DIR = Path(__file__).resolve().parent
 if str(_BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(_BACKEND_DIR))
@@ -25,7 +21,7 @@ from routers import collect, generate, refine, train
 
 app = FastAPI(
     title="StoryForge API",
-    version="0.2.0",
+    version="0.3.0",
     description="Backend for the StoryForge local fine-tuning pipeline.",
 )
 
@@ -38,6 +34,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ---------------------------------------------------------------------------
+# Health check (before routers is fine, but must be before catch-all)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/health")
+async def health():
+    return {"status": "ok", "service": "storyforge-backend"}
+
+
 # Mount routers
 app.include_router(collect.router)
 app.include_router(refine.router)
@@ -48,31 +53,27 @@ app.include_router(generate.router)
 DATA_DIR = _BACKEND_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-# Serve frontend static files (built with `npm run build`)
+# ---------------------------------------------------------------------------
+# SPA fallback — use middleware instead of catch-all route
+# ---------------------------------------------------------------------------
+
 _FRONTEND_DIST = _BACKEND_DIR.parent / "frontend" / "dist"
 if _FRONTEND_DIST.exists():
-    # Serve static assets
     app.mount("/assets", StaticFiles(directory=str(_FRONTEND_DIST / "assets")), name="assets")
 
-    # Serve index.html for SPA fallback
+    from starlette.middleware.base import BaseHTTPMiddleware
     from fastapi.responses import FileResponse
+    from starlette.responses import Response
 
-    @app.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
-        """Serve the SPA - any non-API route returns index.html."""
-        file_path = _FRONTEND_DIST / full_path
-        if file_path.exists() and file_path.is_file():
-            return FileResponse(str(file_path))
-        return FileResponse(str(_FRONTEND_DIST / "index.html"))
+    class SPAFallbackMiddleware(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next) -> Response:
+            response = await call_next(request)
+            # If 404 and not an API route, serve index.html
+            if response.status_code == 404 and not request.url.path.startswith("/api"):
+                return FileResponse(str(_FRONTEND_DIST / "index.html"))
+            return response
 
-
-# ---------------------------------------------------------------------------
-# Health check
-# ---------------------------------------------------------------------------
-
-@app.get("/api/health")
-async def health():
-    return {"status": "ok", "service": "storyforge-backend"}
+    app.add_middleware(SPAFallbackMiddleware)
 
 
 # ---------------------------------------------------------------------------
@@ -85,6 +86,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=8000,
+        port=9000,
         reload=True,
     )

@@ -315,3 +315,14 @@ async def get_video_count(project_id: str):
     with open(proj, "r", encoding="utf-8") as f:
         videos = json.load(f)
     return {"count": len(videos)}
+
+
+@router.get("/videos/{project_id}")
+async def get_videos(project_id: str):
+    """Return all collected videos for a project."""
+    proj = DATA_DIR / project_id / "videos.json"
+    if not proj.exists():
+        return {"videos": []}
+    with open(proj, "r", encoding="utf-8") as f:
+        videos = json.load(f)
+    return {"videos": videos}
