@@ -150,12 +150,26 @@ async def get_video_entries(url: str) -> list[dict]:
 async def extract_subtitle_for_video(info: dict) -> tuple[Optional[str], Optional[str]]:
     """Try to extract subtitle text for a single video.
 
-    Returns (text, route) where route is 'subtitle' or None if unavailable.
+    Returns (text, route) where route is 'subtitle', 'stt', or None if unavailable.
     """
+    # Route A: Subtitles (prefer native subs)
     pick = _pick_subtitle(info)
-    if pick is None:
-        return None, None
-    _lang, sub_url = pick
-    raw = await download_subtitle_async(sub_url)
-    text = _clean_subtitle_text(raw)
-    return text, "subtitle"
+    if pick is not None:
+        _lang, sub_url = pick
+        raw = await download_subtitle_async(sub_url)
+        text = _clean_subtitle_text(raw)
+        return text, "subtitle"
+
+    # Route B: STT fallback via VibeVoice-ASR
+    video_id = info.get("id", "")
+    video_url = info.get("webpage_url") or info.get("url", "")
+    if video_url:
+        try:
+            from services.stt_service import transcribe_video
+            text = await transcribe_video(video_url, video_id)
+            if text:
+                return text, "stt"
+        except Exception:
+            pass
+
+    return None, None
