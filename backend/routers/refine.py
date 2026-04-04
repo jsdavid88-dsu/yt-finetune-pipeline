@@ -103,12 +103,18 @@ def _load_project_preset(project_id: str) -> dict[str, Any]:
 
 async def _run_auto_process(
     job: RefineJob,
-    chunk_size: int = 1500,
-    model: str = "gemma4",
+    chunk_size: int | None = None,
+    model: str | None = None,
 ) -> None:
     """Background: chunk → tag → build JSONL."""
     job.status = JobStatus.running
     try:
+        # Load preset defaults for this project
+        preset = _load_project_preset(job.project_id)
+        effective_chunk_size = chunk_size if chunk_size is not None else preset.get("chunk_size", 1500)
+        effective_model = model if model is not None else preset.get("tag_model", "gemma4")
+        tag_prompt: str | None = preset.get("tag_prompt")
+
         proj_dir = DATA_DIR / job.project_id
         raw_path = proj_dir / "raw.txt"
         if not raw_path.exists():
@@ -125,7 +131,7 @@ async def _run_auto_process(
             return
 
         # Step 1: Chunk
-        text_chunks = rs_chunk_text(raw_text, chunk_size)
+        text_chunks = rs_chunk_text(raw_text, effective_chunk_size)
         job.total = len(text_chunks)
         job.chunks = [
             ChunkData(index=i, text=c) for i, c in enumerate(text_chunks)
@@ -134,7 +140,7 @@ async def _run_auto_process(
         # Step 2: Tag each chunk sequentially
         for i, chunk_obj in enumerate(job.chunks):
             try:
-                tags = await rs_tag_chunk(chunk_obj.text, model=model)
+                tags = await rs_tag_chunk(chunk_obj.text, model=effective_model, prompt_template=tag_prompt)
                 chunk_obj.tags = ChunkTag(**tags)
             except RuntimeError as exc:
                 # Ollama not running
@@ -187,7 +193,7 @@ async def auto_process(req: AutoProcessRequest):
     _refine_jobs[job.job_id] = job
 
     asyncio.create_task(
-        _run_auto_process(job, chunk_size=req.chunk_size, model=req.model)
+        _run_auto_process(job, chunk_size=req.chunk_size, model=req.model)  # None = use preset
     )
 
     return {"job_id": job.job_id, "status": job.status}

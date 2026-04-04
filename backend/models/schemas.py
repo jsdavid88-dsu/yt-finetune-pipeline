@@ -65,16 +65,11 @@ class CollectJob(BaseModel):
 
 class ProjectPreset(BaseModel):
     name: str
-    genre: str = ""
+    description: str = ""
+    tag_prompt: str = "다음 텍스트를 분석하고 반드시 JSON만 응답해. 키: genre, topic, mood, scene_type"
+    tag_model: str = "gemma4"
     chunk_size: int = 1500
-    tagging_prompt: str = (
-        "다음 텍스트를 분석하고 JSON으로 응답해줘. "
-        '{{"genre": "장르", "topic": "주제", "mood": "분위기", "scene_type": "장면유형"}} 형태로. '
-        "텍스트: {chunk}"
-    )
-    jsonl_template: str = (
-        '{{"instruction": "{instruction}", "input": "", "output": "{output}"}}'
-    )
+    jsonl_template: str = "장르: {genre} / 주제: {topic} / 분위기: {mood} / 장면: {scene_type} 스타일로 이야기를 써줘"
     base_model: str = "gemma4"
     generation_prompt: str = "다음 에피소드를 이어서 써줘."
 
@@ -83,43 +78,41 @@ class ProjectPreset(BaseModel):
 DEFAULT_PRESETS: list[dict[str, Any]] = [
     {
         "name": "막장드라마",
-        "genre": "막장드라마",
+        "description": "막장 드라마/실화사연 스타일",
+        "tag_prompt": "이 텍스트의 장르, 주제, 분위기, 장면유형을 분류해줘. 반드시 JSON만 응답. 키: genre, topic, mood, scene_type",
+        "tag_model": "gemma4",
         "chunk_size": 1500,
-        "tagging_prompt": (
-            "다음 텍스트는 막장드라마 대본/시놉시스의 일부야. "
-            "분석하고 JSON으로 응답해줘. "
-            '{{"genre": "막장드라마", "topic": "주제 (예: 불륜, 복수, 출생의비밀)", '
-            '"mood": "분위기 (예: 긴장, 충격, 슬픔)", '
-            '"scene_type": "장면유형 (예: 대화, 독백, 갈등)"}} 형태로. '
-            "텍스트: {chunk}"
-        ),
+        "jsonl_template": "장르: {genre} / 주제: {topic} / 분위기: {mood} / 장면: {scene_type} 스타일로 이야기를 써줘",
         "base_model": "gemma4",
-        "generation_prompt": "막장드라마 스타일로 다음 에피소드를 이어서 써줘.",
+        "generation_prompt": "다음 설정으로 막장 드라마 스타일 이야기를 써줘: {입력}",
     },
     {
         "name": "판타지소설",
-        "genre": "판타지소설",
+        "description": "판타지/이세계 소설 스타일",
+        "tag_prompt": "이 텍스트의 장르, 주제, 분위기, 장면유형을 분류해줘. 반드시 JSON만 응답. 키: genre, topic, mood, scene_type",
+        "tag_model": "gemma4",
         "chunk_size": 2000,
-        "tagging_prompt": (
-            "다음 텍스트는 판타지소설의 일부야. "
-            "분석하고 JSON으로 응답해줘. "
-            '{{"genre": "판타지", "topic": "주제 (예: 모험, 전투, 마법)", '
-            '"mood": "분위기 (예: 긴박, 웅장, 신비)", '
-            '"scene_type": "장면유형 (예: 전투씬, 대화, 여정)"}} 형태로. '
-            "텍스트: {chunk}"
-        ),
+        "jsonl_template": "장르: {genre} / 주제: {topic} / 분위기: {mood} / 장면: {scene_type} 스타일로 이야기를 써줘",
         "base_model": "gemma4",
-        "generation_prompt": "판타지소설 스타일로 다음 장면을 이어서 써줘.",
+        "generation_prompt": "다음 설정으로 판타지 소설을 써줘: {입력}",
+    },
+    {
+        "name": "기술문서",
+        "description": "기술 블로그/문서 스타일",
+        "tag_prompt": "이 텍스트의 주제, 난이도, 기술스택, 문서유형을 분류해줘. 반드시 JSON만 응답. 키: genre, topic, mood, scene_type",
+        "tag_model": "gemma4",
+        "chunk_size": 2000,
+        "jsonl_template": "주제: {topic} / 난이도: {mood} / 유형: {scene_type} 스타일로 기술 문서를 써줘",
+        "base_model": "gemma4",
+        "generation_prompt": "다음 주제로 기술 문서를 써줘: {입력}",
     },
     {
         "name": "일반",
-        "genre": "일반",
+        "description": "커스텀 용도",
+        "tag_prompt": "다음 텍스트를 분석하고 반드시 JSON만 응답해. 키: genre, topic, mood, scene_type",
+        "tag_model": "gemma4",
         "chunk_size": 1500,
-        "tagging_prompt": (
-            "다음 텍스트를 분석하고 JSON으로 응답해줘. "
-            '{{"genre": "장르", "topic": "주제", "mood": "분위기", "scene_type": "장면유형"}} 형태로. '
-            "텍스트: {chunk}"
-        ),
+        "jsonl_template": "장르: {genre} / 주제: {topic} / 분위기: {mood} / 장면: {scene_type} 스타일로 이야기를 써줘",
         "base_model": "gemma4",
         "generation_prompt": "다음 에피소드를 이어서 써줘.",
     },
@@ -170,8 +163,8 @@ class TextSaveRequest(BaseModel):
 
 class AutoProcessRequest(BaseModel):
     project_id: str
-    chunk_size: int = 1500
-    model: str = "gemma4"
+    chunk_size: Optional[int] = None
+    model: Optional[str] = None
 
 
 class ChunkTag(BaseModel):

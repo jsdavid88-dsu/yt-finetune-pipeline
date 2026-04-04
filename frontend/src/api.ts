@@ -100,12 +100,15 @@ export async function refineSaveText(
 // ── Refine Auto-Process ──────────────────────────────────
 export async function refineAutoProcess(
   projectId: string,
-  chunkSize: number = 1500,
-  model: string = 'gemma4'
+  chunkSize?: number,
+  model?: string
 ): Promise<{ job_id: string }> {
+  const body: Record<string, unknown> = { project_id: projectId };
+  if (chunkSize !== undefined) body.chunk_size = chunkSize;
+  if (model !== undefined) body.model = model;
   return request('/api/refine/auto-process', {
     method: 'POST',
-    body: JSON.stringify({ project_id: projectId, chunk_size: chunkSize, model }),
+    body: JSON.stringify(body),
   });
 }
 

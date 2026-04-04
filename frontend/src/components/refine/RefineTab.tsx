@@ -97,7 +97,7 @@ export default function RefineTab({ project, addLog, videos }: Props) {
     addLog('info', '자동 정제를 시작합니다...');
 
     try {
-      const resp = await refineAutoProcess(project.id, 1500, 'gemma4');
+      const resp = await refineAutoProcess(project.id);
       const jid = resp.job_id;
       setJobId(jid);
 
