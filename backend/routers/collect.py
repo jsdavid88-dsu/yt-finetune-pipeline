@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,38 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 # In-memory job store (keyed by job_id)
 _jobs: dict[str, CollectJob] = {}
+
+# Track projects with a running collection to prevent concurrent runs
+_running_projects: set[str] = set()
+
+_JOB_TTL = 3600  # seconds – remove finished jobs older than 1 hour
+_JOB_MAX = 100   # hard cap on total jobs kept in memory
+
+
+def _cleanup_jobs() -> None:
+    """Remove completed/failed jobs older than TTL and enforce hard cap."""
+    now = time.time()
+    expired = [
+        jid
+        for jid, j in _jobs.items()
+        if j.status in (JobStatus.completed, JobStatus.failed)
+        and hasattr(j, "_finished_at")
+        and now - j._finished_at > _JOB_TTL
+    ]
+    for jid in expired:
+        del _jobs[jid]
+
+    # Hard cap: remove oldest finished jobs first
+    while len(_jobs) > _JOB_MAX:
+        finished = [
+            (jid, getattr(j, "_finished_at", float("inf")))
+            for jid, j in _jobs.items()
+            if j.status in (JobStatus.completed, JobStatus.failed)
+        ]
+        if not finished:
+            break
+        oldest_id = min(finished, key=lambda x: x[1])[0]
+        del _jobs[oldest_id]
 
 
 # ---------------------------------------------------------------------------
@@ -69,6 +102,7 @@ async def _run_collect_job(job: CollectJob) -> None:
         entries = await get_video_entries(job.url)
         if not entries:
             job.status = JobStatus.failed
+            job._finished_at = time.time()
             return
 
         # populate video list
@@ -100,26 +134,51 @@ async def _run_collect_job(job: CollectJob) -> None:
                 vid.status = VideoStatus.error
                 vid.error = str(exc)
 
-        # persist collected text to project directory
+        # persist collected text to project directory (append, not overwrite)
         project_dir = _ensure_project_dir(job.project_id)
-        all_text_parts: list[str] = []
+
+        # Load existing videos.json to detect already-collected video_ids
+        videos_json_path = project_dir / "videos.json"
+        existing_videos: list[dict[str, Any]] = []
+        existing_ids: set[str] = set()
+        if videos_json_path.exists():
+            with open(videos_json_path, "r", encoding="utf-8") as f:
+                existing_videos = json.load(f)
+            existing_ids = {v["video_id"] for v in existing_videos}
+
+        # Build new text parts only for videos not already collected
+        new_text_parts: list[str] = []
+        new_video_entries: list[dict[str, Any]] = []
         for vid in job.videos:
+            if vid.video_id in existing_ids:
+                continue  # skip duplicates
+            new_video_entries.append(vid.model_dump())
             if vid.text:
-                all_text_parts.append(
+                new_text_parts.append(
                     f"--- VIDEO: {vid.title} ---\n{vid.text}\n--- END VIDEO ---"
                 )
-        combined = "\n\n".join(all_text_parts)
-        (project_dir / "raw.txt").write_text(combined, encoding="utf-8")
 
-        # save per-video JSON
-        videos_data = [v.model_dump() for v in job.videos]
-        (project_dir / "videos.json").write_text(
-            json.dumps(videos_data, ensure_ascii=False, indent=2), encoding="utf-8"
+        # Append new text to raw.txt
+        if new_text_parts:
+            raw_path = project_dir / "raw.txt"
+            existing_text = ""
+            if raw_path.exists():
+                existing_text = raw_path.read_text(encoding="utf-8")
+            separator = "\n\n" if existing_text else ""
+            combined = existing_text + separator + "\n\n".join(new_text_parts)
+            raw_path.write_text(combined, encoding="utf-8")
+
+        # Merge new videos into existing videos.json
+        merged_videos = existing_videos + new_video_entries
+        videos_json_path.write_text(
+            json.dumps(merged_videos, ensure_ascii=False, indent=2), encoding="utf-8"
         )
 
         job.status = JobStatus.completed
+        job._finished_at = time.time()
     except Exception as exc:
         job.status = JobStatus.failed
+        job._finished_at = time.time()
         # store error on first video slot if available
         if job.videos:
             job.videos[0].error = str(exc)
@@ -150,11 +209,27 @@ async def start_collection(req: CollectRequest):
     if not any(p["id"] == req.project_id for p in projects):
         raise HTTPException(status_code=404, detail="Project not found")
 
+    # prevent concurrent collection for the same project
+    if req.project_id in _running_projects:
+        raise HTTPException(
+            status_code=409,
+            detail="Collection already running for this project",
+        )
+
+    _cleanup_jobs()
     job = CollectJob(project_id=req.project_id, url=req.url)
     _jobs[job.job_id] = job
 
+    _running_projects.add(req.project_id)
+
+    async def _guarded_collect(j: CollectJob) -> None:
+        try:
+            await _run_collect_job(j)
+        finally:
+            _running_projects.discard(j.project_id)
+
     # fire and forget
-    asyncio.create_task(_run_collect_job(job))
+    asyncio.create_task(_guarded_collect(job))
 
     return {"job_id": job.job_id, "status": job.status}
 

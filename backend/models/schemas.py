@@ -29,6 +29,7 @@ class JobStatus(str, Enum):
 class SubtitleRoute(str, Enum):
     subtitle = "subtitle"   # Route A  – subtitles available
     ocr = "ocr"             # Route B  – OCR (placeholder)
+    stt = "stt"             # Route C  – Speech-to-Text
 
 
 # ---------------------------------------------------------------------------
