@@ -43,6 +43,16 @@ async def health():
     return {"status": "ok", "service": "storyforge-backend"}
 
 
+@app.post("/api/shutdown")
+async def shutdown():
+    """Gracefully shutdown the server."""
+    import os
+    import signal
+
+    os.kill(os.getpid(), signal.SIGTERM)
+    return {"status": "shutting_down"}
+
+
 # Mount routers
 app.include_router(collect.router)
 app.include_router(refine.router)
@@ -83,9 +93,13 @@ if _FRONTEND_DIST.exists():
 if __name__ == "__main__":
     import uvicorn
 
+    import os
+
+    dev_mode = os.environ.get("STORYFORGE_DEV", "").lower() in ("1", "true")
+
     uvicorn.run(
         "main:app",
         host="0.0.0.0",
-        port=9999,
-        reload=True,
+        port=int(os.environ.get("STORYFORGE_PORT", "8000")),
+        reload=dev_mode,
     )

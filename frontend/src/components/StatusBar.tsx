@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Wifi, WifiOff, AlertCircle, CheckCircle2, Info, AlertTriangle } from 'lucide-react';
+import { Wifi, WifiOff, AlertCircle, CheckCircle2, Info, AlertTriangle, Power } from 'lucide-react';
 import type { LogEntry } from '../types';
 
 interface Props {
@@ -61,6 +61,24 @@ export default function StatusBar({ logs }: Props) {
           </span>
         </div>
       )}
+
+      <div className="w-px h-3.5 bg-gray-700" />
+
+      {/* Shutdown button */}
+      <button
+        onClick={async () => {
+          if (!confirm('서버를 종료하시겠습니까?')) return;
+          try {
+            await fetch('/api/shutdown', { method: 'POST' });
+          } catch {}
+          setConnected(false);
+        }}
+        className="flex items-center gap-1 text-gray-500 hover:text-red-400 transition-colors"
+        title="서버 종료"
+      >
+        <Power size={12} />
+        <span>종료</span>
+      </button>
     </div>
   );
 }
