@@ -99,7 +99,16 @@ def _ensure_project_dir(project_id: str) -> Path:
 async def _run_collect_job(job: CollectJob) -> None:
     job.status = JobStatus.running
     try:
-        entries = await get_video_entries(job.url)
+        # Support multiple URLs separated by newlines
+        urls = [u.strip() for u in job.url.split('\n') if u.strip()]
+        entries: list[dict] = []
+        for single_url in urls:
+            try:
+                result = await get_video_entries(single_url)
+                if result:
+                    entries.extend(result)
+            except Exception:
+                pass  # Skip failed URLs, continue with others
         if not entries:
             job.status = JobStatus.failed
             job._finished_at = time.time()

@@ -15,9 +15,8 @@ export default function UrlInput({ onSubmit, loading, onPreview }: Props) {
     e.preventDefault();
     if (!url.trim()) return;
     const urls = url.split('\n').map(u => u.trim()).filter(u => u.length > 0);
-    for (const u of urls) {
-      onSubmit(u, playlist);
-    }
+    // Send all URLs as a single string joined by newlines — backend handles sequentially
+    onSubmit(urls.join('\n'), playlist);
   };
 
   const handlePreview = () => {
