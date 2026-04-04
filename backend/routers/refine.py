@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,35 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 # In-memory job store for auto-process jobs
 _refine_jobs: dict[str, RefineJob] = {}
+
+_JOB_TTL = 3600  # seconds – remove finished jobs older than 1 hour
+_JOB_MAX = 100   # hard cap on total jobs kept in memory
+
+
+def _cleanup_jobs() -> None:
+    """Remove completed/failed jobs older than TTL and enforce hard cap."""
+    now = time.time()
+    expired = [
+        jid
+        for jid, j in _refine_jobs.items()
+        if j.status in (JobStatus.completed, JobStatus.failed)
+        and hasattr(j, "_finished_at")
+        and now - j._finished_at > _JOB_TTL
+    ]
+    for jid in expired:
+        del _refine_jobs[jid]
+
+    # Hard cap: remove oldest finished jobs first
+    while len(_refine_jobs) > _JOB_MAX:
+        finished = [
+            (jid, getattr(j, "_finished_at", float("inf")))
+            for jid, j in _refine_jobs.items()
+            if j.status in (JobStatus.completed, JobStatus.failed)
+        ]
+        if not finished:
+            break
+        oldest_id = min(finished, key=lambda x: x[1])[0]
+        del _refine_jobs[oldest_id]
 
 
 def _project_dir(project_id: str) -> Path:
@@ -83,12 +113,14 @@ async def _run_auto_process(
         raw_path = proj_dir / "raw.txt"
         if not raw_path.exists():
             job.status = JobStatus.failed
+            job._finished_at = time.time()
             job.error = "raw.txt 파일을 찾을 수 없습니다. 먼저 데이터를 수집하세요."
             return
 
         raw_text = raw_path.read_text(encoding="utf-8")
         if not raw_text.strip():
             job.status = JobStatus.failed
+            job._finished_at = time.time()
             job.error = "raw.txt가 비어 있습니다."
             return
 
@@ -107,6 +139,7 @@ async def _run_auto_process(
             except RuntimeError as exc:
                 # Ollama not running
                 job.status = JobStatus.failed
+                job._finished_at = time.time()
                 job.error = str(exc)
                 return
             except Exception:
@@ -134,9 +167,11 @@ async def _run_auto_process(
         )
 
         job.status = JobStatus.completed
+        job._finished_at = time.time()
 
     except Exception as exc:
         job.status = JobStatus.failed
+        job._finished_at = time.time()
         job.error = str(exc)
 
 
@@ -147,6 +182,7 @@ async def auto_process(req: AutoProcessRequest):
     if not proj_dir.exists():
         raise HTTPException(status_code=404, detail="Project directory not found")
 
+    _cleanup_jobs()
     job = RefineJob(project_id=req.project_id)
     _refine_jobs[job.job_id] = job
 
