@@ -126,10 +126,13 @@ export default function ChatInterface({
           <option value="">모델 선택...</option>
           {models.map((m) => (
             <option key={m.name} value={m.name}>
-              {m.name} ({m.size})
+              {m.name} ({m.size}){m.name.startsWith("storyforge-") ? " ✦ 학습됨" : ""}
             </option>
           ))}
         </select>
+        {selectedModel.startsWith("storyforge-") && (
+          <span className="ml-1 px-1.5 py-0.5 text-xs bg-green-100 text-green-700 rounded font-medium">학습됨</span>
+        )}
       </div>
 
       {/* Messages */}
