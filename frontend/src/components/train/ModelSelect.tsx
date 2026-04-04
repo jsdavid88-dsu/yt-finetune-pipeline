@@ -24,7 +24,7 @@ export default function ModelSelect({ models, selectedId, onChange, loading }: P
         <option value="">모델 선택...</option>
         {models.map((m) => (
           <option key={m.id} value={m.id}>
-            {m.name} ({m.size})
+            {m.name} ({m.params})
           </option>
         ))}
       </select>

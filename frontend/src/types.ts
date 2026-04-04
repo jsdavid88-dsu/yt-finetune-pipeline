@@ -71,25 +71,29 @@ export interface RefineResult {
 export interface TrainModel {
   id: string;
   name: string;
-  size: string;
+  params: string;
 }
 
 export interface TrainConfig {
-  modelId: string;
-  epochs: number;
-  learningRate: number;
-  loraRank: number;
-  batchSize: number;
-  outputPath: string;
+  num_epochs: number;
+  learning_rate: number;
+  batch_size: number;
+  lora_rank: number;
+  max_seq_length: number;
 }
 
-export interface TrainJob {
-  jobId: string;
-  status: 'running' | 'completed' | 'failed';
-  currentEpoch: number;
-  totalEpochs: number;
-  loss: number[];
-  elapsedTime: string;
+export interface GpuInfo {
+  available: boolean;
+  info: string;
+}
+
+export interface TrainProgress {
+  status: "idle" | "starting" | "installing" | "loading_model" | "training" | "converting" | "registering" | "completed" | "failed";
+  epoch: number;
+  total_epochs: number;
+  progress: number;
+  loss: number | null;
+  error: string | null;
 }
 
 export interface ChatMessage {

@@ -5,6 +5,8 @@ import type {
   RefineJobStatus,
   TrainModel,
   TrainConfig,
+  GpuInfo,
+  TrainProgress,
   GenerateModel,
   PromptTemplate,
 } from './types';
@@ -142,6 +144,10 @@ export async function refineUpdateChunkTag(
 }
 
 // ── Train ────────────────────────────────────────────────
+export async function trainGpuCheck(): Promise<GpuInfo> {
+  return request('/api/train/gpu-check');
+}
+
 export async function trainGetModels(): Promise<TrainModel[]> {
   return request('/api/train/models');
 }
@@ -150,23 +156,23 @@ export async function trainGetConfig(): Promise<TrainConfig> {
   return request('/api/train/config');
 }
 
-export async function trainStart(config: TrainConfig): Promise<{ jobId: string }> {
+export async function trainStart(body: {
+  project_id: string;
+  base_model: string;
+  config: TrainConfig;
+}): Promise<{ ok: boolean }> {
   return request('/api/train/start', {
     method: 'POST',
-    body: JSON.stringify(config),
+    body: JSON.stringify(body),
   });
 }
 
-export async function trainStatus(
-  jobId: string
-): Promise<{
-  status: string;
-  currentEpoch: number;
-  totalEpochs: number;
-  loss: number[];
-  elapsedTime: string;
-}> {
-  return request(`/api/train/status/${jobId}`);
+export async function trainStatus(projectId: string): Promise<TrainProgress> {
+  return request(`/api/train/status/${projectId}`);
+}
+
+export async function trainStop(projectId: string): Promise<{ ok: boolean }> {
+  return request(`/api/train/stop/${projectId}`, { method: 'POST' });
 }
 
 // ── Generate ─────────────────────────────────────────────
