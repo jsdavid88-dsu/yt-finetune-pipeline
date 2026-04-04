@@ -1,72 +1,67 @@
-"""Phase 3 - Fine-tuning router (placeholder)."""
-
+"""Phase 3 - Fine-tuning router with real Unsloth QLoRA training."""
 from __future__ import annotations
 
-import uuid
+from fastapi import APIRouter, HTTPException
 
-from fastapi import APIRouter
-
-from models.schemas import TrainConfig, TrainStartRequest
+from models.schemas import TrainStartRequest
+from services.train_service import check_gpu, start_training, get_progress, stop_training
 
 router = APIRouter(prefix="/api/train", tags=["train"])
 
-BASE_MODELS = [
-    {"id": "unsloth/llama-3-8b-bnb-4bit", "name": "LLaMA 3 8B (4-bit)", "params": "8B"},
-    {"id": "unsloth/mistral-7b-bnb-4bit", "name": "Mistral 7B (4-bit)", "params": "7B"},
-    {"id": "unsloth/gemma-2b-bnb-4bit", "name": "Gemma 2B (4-bit)", "params": "2B"},
-    {"id": "unsloth/phi-3-mini-4k-instruct-bnb-4bit", "name": "Phi-3 Mini (4-bit)", "params": "3.8B"},
-    {"id": "unsloth/qwen2-7b-bnb-4bit", "name": "Qwen2 7B (4-bit)", "params": "7B"},
-]
 
-# Fake in-memory job store
-_train_jobs: dict[str, dict] = {}
+@router.get("/gpu-check")
+async def gpu_check():
+    return check_gpu()
 
 
 @router.get("/models")
 async def list_models():
-    return BASE_MODELS
+    return [
+        {"id": "unsloth/gemma-3-4b-it-bnb-4bit", "name": "Gemma 3 4B (4-bit)", "params": "4B"},
+        {"id": "unsloth/llama-3.1-8b-bnb-4bit", "name": "LLaMA 3.1 8B (4-bit)", "params": "8B"},
+        {"id": "unsloth/mistral-7b-bnb-4bit", "name": "Mistral 7B (4-bit)", "params": "7B"},
+        {"id": "unsloth/Qwen2.5-7B-bnb-4bit", "name": "Qwen2.5 7B (4-bit)", "params": "7B"},
+    ]
 
 
 @router.post("/start")
-async def start_training(req: TrainStartRequest):
-    job_id = uuid.uuid4().hex[:12]
-    _train_jobs[job_id] = {
-        "job_id": job_id,
-        "project_id": req.project_id,
+async def start(req: TrainStartRequest):
+    gpu = check_gpu()
+    if not gpu["available"]:
+        raise HTTPException(
+            status_code=400,
+            detail="GPU가 감지되지 않습니다. LoRA 학습에는 NVIDIA GPU가 필요합니다.",
+        )
+    config = {
         "base_model": req.base_model,
-        "status": "running",
-        "progress": 0,
-        "epoch": 0,
-        "total_epochs": req.config.get("num_epochs", 3),
-        "loss": None,
+        "num_epochs": req.config.get("num_epochs", 3),
+        "learning_rate": req.config.get("learning_rate", 2e-4),
+        "batch_size": req.config.get("batch_size", 4),
+        "lora_rank": req.config.get("lora_rank", 16),
+        "max_seq_length": req.config.get("max_seq_length", 2048),
     }
-    return {"job_id": job_id, "status": "running", "message": "Training started (placeholder)."}
+    result = start_training(req.project_id, config)
+    if "error" in result:
+        raise HTTPException(status_code=409, detail=result["error"])
+    return result
 
 
-@router.get("/status/{job_id}")
-async def training_status(job_id: str):
-    job = _train_jobs.get(job_id)
-    if not job:
-        # return a fake completed job rather than 404 for placeholder purposes
-        return {
-            "job_id": job_id,
-            "status": "completed",
-            "progress": 100,
-            "epoch": 3,
-            "total_epochs": 3,
-            "loss": 0.42,
-            "message": "Placeholder: training would be done.",
-        }
-    # simulate progress bump
-    if job["progress"] < 100:
-        job["progress"] = min(job["progress"] + 10, 100)
-        job["epoch"] = int(job["total_epochs"] * job["progress"] / 100)
-        job["loss"] = round(2.5 - (job["progress"] / 100) * 2.0, 4)
-    if job["progress"] >= 100:
-        job["status"] = "completed"
-    return job
+@router.get("/status/{project_id}")
+async def status(project_id: str):
+    return get_progress(project_id)
+
+
+@router.post("/stop/{project_id}")
+async def stop(project_id: str):
+    return stop_training(project_id)
 
 
 @router.get("/config")
 async def default_config():
-    return TrainConfig().model_dump()
+    return {
+        "num_epochs": 3,
+        "learning_rate": 2e-4,
+        "batch_size": 4,
+        "lora_rank": 16,
+        "max_seq_length": 2048,
+    }
