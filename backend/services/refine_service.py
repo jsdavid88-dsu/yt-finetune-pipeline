@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import Any
@@ -78,13 +79,16 @@ def _split_long(text: str, max_len: int, out: list[str]) -> None:
 # 2. tag_chunk
 # ---------------------------------------------------------------------------
 
-async def tag_chunk(chunk: str, model: str = "gemma4") -> dict:
+async def tag_chunk(chunk: str, model: str = "gemma4", max_retries: int = 3, prompt_template: str | None = None) -> dict:
     """Call Ollama to tag a chunk. Returns {genre, topic, mood, scene_type}."""
-    prompt = (
-        "다음 텍스트를 분석하고 반드시 JSON만 응답해. "
-        "키: genre, topic, mood, scene_type\n\n"
-        f"텍스트:\n{chunk}"
-    )
+    if prompt_template:
+        prompt = f"{prompt_template}\n\n텍스트:\n{chunk}"
+    else:
+        prompt = (
+            "다음 텍스트를 분석하고 반드시 JSON만 응답해. "
+            "키: genre, topic, mood, scene_type\n\n"
+            f"텍스트:\n{chunk}"
+        )
 
     payload = {
         "model": model,
@@ -94,23 +98,32 @@ async def tag_chunk(chunk: str, model: str = "gemma4") -> dict:
         "format": "json",
     }
 
-    try:
-        async with httpx.AsyncClient(base_url=OLLAMA_BASE, timeout=TIMEOUT) as client:
-            resp = await client.post("/api/generate", json=payload)
-            resp.raise_for_status()
-            raw_response = resp.json().get("response", "{}")
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(base_url=OLLAMA_BASE, timeout=TIMEOUT) as client:
+                resp = await client.post("/api/generate", json=payload)
+                resp.raise_for_status()
+                raw_response = resp.json().get("response", "{}")
 
-        tags = _extract_json(raw_response)
-        return {
-            "genre": tags.get("genre", "미분류"),
-            "topic": tags.get("topic", "미분류"),
-            "mood": tags.get("mood", "미분류"),
-            "scene_type": tags.get("scene_type", "미분류"),
-        }
-    except httpx.ConnectError:
-        raise RuntimeError("Ollama 서버에 연결할 수 없습니다. localhost:11434에서 Ollama가 실행 중인지 확인하세요.")
-    except Exception:
-        return dict(DEFAULT_TAGS)
+            tags = _extract_json(raw_response)
+            result = {
+                "genre": tags.get("genre", "미분류"),
+                "topic": tags.get("topic", "미분류"),
+                "mood": tags.get("mood", "미분류"),
+                "scene_type": tags.get("scene_type", "미분류"),
+            }
+            # Success if at least one tag has a non-default value
+            if any(v != "미분류" for v in result.values()):
+                return result
+        except httpx.ConnectError:
+            raise RuntimeError("Ollama 서버에 연결할 수 없습니다. localhost:11434에서 Ollama가 실행 중인지 확인하세요.")
+        except Exception:
+            pass  # will retry
+
+        if attempt < max_retries - 1:
+            await asyncio.sleep(1)
+
+    return dict(DEFAULT_TAGS)
 
 
 def _extract_json(text: str) -> dict[str, Any]:
