@@ -98,8 +98,18 @@ if _FRONTEND_DIST.exists():
 
 if __name__ == "__main__":
     import uvicorn
-
+    import logging
     import os
+
+    # Suppress noisy health check logs
+    class HealthCheckFilter(logging.Filter):
+        def filter(self, record):
+            msg = record.getMessage()
+            if "/api/health" in msg:
+                return False
+            return True
+
+    logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
 
     dev_mode = os.environ.get("STORYFORGE_DEV", "").lower() in ("1", "true")
 

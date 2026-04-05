@@ -50,12 +50,11 @@ def start_training(project_id: str, config: dict[str, Any]) -> dict:
     proc = subprocess.Popen(
         [
             sys.executable,
+            "-u",  # unbuffered output
             str(_SCRIPTS_DIR / "train_lora.py"),
             "--config",
             str(config_path),
         ],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
     )
     _train_processes[project_id] = proc
     return {"status": "started", "pid": proc.pid}
