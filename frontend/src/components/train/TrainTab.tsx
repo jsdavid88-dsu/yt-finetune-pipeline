@@ -39,11 +39,11 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const defaultConfig: TrainConfig = {
-  num_epochs: 3,
-  learning_rate: 0.0002,
-  batch_size: 4,
-  lora_rank: 16,
-  max_seq_length: 2048,
+  num_epochs: 2,
+  learning_rate: 0.0001,
+  batch_size: 2,
+  lora_rank: 32,
+  max_seq_length: 4096,
 };
 
 export default function TrainTab({ project, addLog }: Props) {

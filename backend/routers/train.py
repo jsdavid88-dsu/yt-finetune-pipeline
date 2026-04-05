@@ -17,12 +17,11 @@ async def gpu_check():
 @router.get("/models")
 async def list_models():
     return [
-        {"id": "unsloth/gemma-4-12b-it-bnb-4bit", "name": "Gemma 4 12B (4-bit) [추천]", "params": "12B"},
-        {"id": "unsloth/gemma-4-27b-it-bnb-4bit", "name": "Gemma 4 27B (4-bit)", "params": "27B"},
-        {"id": "unsloth/gemma-3-4b-it-bnb-4bit", "name": "Gemma 3 4B (4-bit)", "params": "4B"},
-        {"id": "unsloth/llama-3.1-8b-bnb-4bit", "name": "LLaMA 3.1 8B (4-bit)", "params": "8B"},
-        {"id": "unsloth/mistral-7b-bnb-4bit", "name": "Mistral 7B (4-bit)", "params": "7B"},
-        {"id": "unsloth/Qwen2.5-7B-bnb-4bit", "name": "Qwen2.5 7B (4-bit)", "params": "7B"},
+        {"id": "unsloth/gemma-4-E4B-it", "name": "Gemma 4 8B (E4B)", "params": "8B", "vram": "~12GB"},
+        {"id": "unsloth/gemma-4-E12B-it", "name": "Gemma 4 12B (E12B)", "params": "12B", "vram": "~18GB"},
+        {"id": "unsloth/gemma-4-E27B-it", "name": "Gemma 4 27B (E27B)", "params": "27B", "vram": "~24GB+"},
+        {"id": "unsloth/llama-3.1-8b-bnb-4bit", "name": "LLaMA 3.1 8B (4-bit)", "params": "8B", "vram": "~12GB"},
+        {"id": "unsloth/Qwen2.5-7B-bnb-4bit", "name": "Qwen2.5 7B (4-bit)", "params": "7B", "vram": "~12GB"},
     ]
 
 
@@ -36,11 +35,16 @@ async def start(req: TrainStartRequest):
         )
     config = {
         "base_model": req.base_model,
-        "num_epochs": req.config.get("num_epochs", 3),
-        "learning_rate": req.config.get("learning_rate", 2e-4),
-        "batch_size": req.config.get("batch_size", 4),
-        "lora_rank": req.config.get("lora_rank", 16),
-        "max_seq_length": req.config.get("max_seq_length", 2048),
+        "num_epochs": req.config.get("num_epochs", 2),
+        "learning_rate": req.config.get("learning_rate", 1e-4),
+        "batch_size": req.config.get("batch_size", 2),
+        "gradient_accumulation_steps": req.config.get("gradient_accumulation_steps", 16),
+        "lora_rank": req.config.get("lora_rank", 32),
+        "lora_alpha": req.config.get("lora_alpha", 64),
+        "max_seq_length": req.config.get("max_seq_length", 4096),
+        "warmup_ratio": req.config.get("warmup_ratio", 0.05),
+        "weight_decay": req.config.get("weight_decay", 0.01),
+        "eval_split": req.config.get("eval_split", 0.05),
     }
     result = start_training(req.project_id, config)
     if "error" in result:
@@ -61,9 +65,14 @@ async def stop(project_id: str):
 @router.get("/config")
 async def default_config():
     return {
-        "num_epochs": 3,
-        "learning_rate": 2e-4,
-        "batch_size": 4,
-        "lora_rank": 16,
-        "max_seq_length": 2048,
+        "num_epochs": 2,
+        "learning_rate": 1e-4,
+        "batch_size": 2,
+        "gradient_accumulation_steps": 16,
+        "lora_rank": 32,
+        "lora_alpha": 64,
+        "max_seq_length": 4096,
+        "warmup_ratio": 0.05,
+        "weight_decay": 0.01,
+        "eval_split": 0.05,
     }
