@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Download } from 'lucide-react';
+import { Download, MessageSquare, Layers, BookOpen } from 'lucide-react';
 import type { Project, ChatMessage, GenerateModel, PromptTemplate } from '../../types';
 import { generateGetModels, generateExport, getTemplates, saveTemplate, deleteTemplate } from '../../api';
 import ChatInterface from './ChatInterface';
 import TemplateManager from './TemplateManager';
 import BatchGenerate from './BatchGenerate';
+import StoryGenerator from './StoryGenerator';
 
 interface Props {
   project: Project | null;
@@ -35,7 +36,10 @@ const defaultTemplates: PromptTemplate[] = [
   },
 ];
 
+type GenerateMode = 'chat' | 'story';
+
 export default function GenerateTab({ project, addLog }: Props) {
+  const [mode, setMode] = useState<GenerateMode>('chat');
   const [models, setModels] = useState<GenerateModel[]>(defaultModels);
   const [selectedModel, setSelectedModel] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -141,43 +145,72 @@ export default function GenerateTab({ project, addLog }: Props) {
           <p className="text-sm text-gray-500">미세 조정된 모델로 텍스트를 생성합니다.</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => handleExport('txt')} className="btn-secondary text-sm">
-            <Download size={14} />
-            TXT 내보내기
-          </button>
-          <button onClick={() => handleExport('md')} className="btn-secondary text-sm">
-            <Download size={14} />
-            MD 내보내기
-          </button>
+          {/* Mode tabs */}
+          <div className="flex bg-gray-800 rounded-lg p-0.5 mr-2">
+            <button
+              onClick={() => setMode('chat')}
+              className={`px-3 py-1.5 rounded text-sm flex items-center gap-1.5 transition-colors ${
+                mode === 'chat' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-300'
+              }`}
+            >
+              <MessageSquare size={14} /> 채팅
+            </button>
+            <button
+              onClick={() => setMode('story')}
+              className={`px-3 py-1.5 rounded text-sm flex items-center gap-1.5 transition-colors ${
+                mode === 'story' ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-gray-300'
+              }`}
+            >
+              <BookOpen size={14} /> 스크립트
+            </button>
+          </div>
+          {mode === 'chat' && (
+            <>
+              <button onClick={() => handleExport('txt')} className="btn-secondary text-sm">
+                <Download size={14} />
+                TXT 내보내기
+              </button>
+              <button onClick={() => handleExport('md')} className="btn-secondary text-sm">
+                <Download size={14} />
+                MD 내보내기
+              </button>
+            </>
+          )}
         </div>
       </div>
 
-      <div className="flex-1 grid grid-cols-4 gap-4 min-h-0">
-        {/* Chat - takes 3 cols */}
-        <div className="col-span-3 flex flex-col gap-4 min-h-0">
-          <div className="flex-1 min-h-0">
-            <ChatInterface
-              models={models}
-              selectedModel={selectedModel}
-              onSelectModel={setSelectedModel}
-              messages={messages}
-              setMessages={setMessages}
-              addLog={addLog}
+      {mode === 'story' ? (
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <StoryGenerator addLog={addLog} />
+        </div>
+      ) : (
+        <div className="flex-1 grid grid-cols-4 gap-4 min-h-0">
+          {/* Chat - takes 3 cols */}
+          <div className="col-span-3 flex flex-col gap-4 min-h-0">
+            <div className="flex-1 min-h-0">
+              <ChatInterface
+                models={models}
+                selectedModel={selectedModel}
+                onSelectModel={setSelectedModel}
+                messages={messages}
+                setMessages={setMessages}
+                addLog={addLog}
+              />
+            </div>
+            <BatchGenerate selectedModel={selectedModel} addLog={addLog} />
+          </div>
+
+          {/* Side panel - templates */}
+          <div className="min-h-0">
+            <TemplateManager
+              templates={templates}
+              onSelect={handleTemplateSelect}
+              onSave={handleTemplateSave}
+              onDelete={handleTemplateDelete}
             />
           </div>
-          <BatchGenerate selectedModel={selectedModel} addLog={addLog} />
         </div>
-
-        {/* Side panel - templates */}
-        <div className="min-h-0">
-          <TemplateManager
-            templates={templates}
-            onSelect={handleTemplateSelect}
-            onSave={handleTemplateSave}
-            onDelete={handleTemplateDelete}
-          />
-        </div>
-      </div>
+      )}
     </div>
   );
 }

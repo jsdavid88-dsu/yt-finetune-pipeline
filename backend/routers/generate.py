@@ -14,10 +14,14 @@ from models.schemas import (
     ChatRequest,
     ExportRequest,
     PromptTemplate,
+    SceneRegenerateRequest,
+    StoryGenerateRequest,
+    StoryOutlineRequest,
 )
 from services.ollama import generate as ollama_generate
 from services.ollama import generate_stream as ollama_stream
 from services.ollama import list_models as ollama_list_models
+from services.story_service import generate_outline, generate_scenes, regenerate_scene
 
 router = APIRouter(prefix="/api/generate", tags=["generate"])
 
@@ -180,3 +184,75 @@ async def save_template(tpl: PromptTemplate):
         templates.append(tpl.model_dump())
     _save_templates(templates)
     return tpl.model_dump()
+
+
+# ---------------------------------------------------------------------------
+# Story generation (chain pipeline)
+# ---------------------------------------------------------------------------
+
+@router.post("/story/outline")
+async def story_outline(req: StoryOutlineRequest):
+    """Phase 1: Generate outline for user review/editing."""
+    try:
+        outline_text = await generate_outline(
+            model=req.model,
+            genre=req.genre,
+            topic=req.topic,
+            num_scenes=req.num_scenes,
+            temperature=req.temperature,
+            max_tokens=req.max_tokens,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Ollama error: {exc}")
+    return {"outline": outline_text}
+
+
+@router.post("/story/generate")
+async def story_generate(req: StoryGenerateRequest):
+    """Phase 2: Generate scenes from approved outline. SSE streaming."""
+    async def event_generator():
+        try:
+            async for event in generate_scenes(
+                model=req.model,
+                genre=req.genre,
+                topic=req.topic,
+                outline=req.outline,
+                temperature=req.temperature,
+                max_tokens=req.max_tokens,
+            ):
+                data = json.dumps(event, ensure_ascii=False)
+                yield f"data: {data}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as exc:
+            error_data = json.dumps({"step": "error", "error": str(exc)})
+            yield f"data: {error_data}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.post("/story/regenerate-scene")
+async def story_regenerate_scene(req: SceneRegenerateRequest):
+    """Regenerate a single scene."""
+    try:
+        scene_text = await regenerate_scene(
+            model=req.model,
+            genre=req.genre,
+            topic=req.topic,
+            outline=req.outline,
+            scene_num=req.scene_num,
+            scene_description=req.scene_description,
+            prev_scenes=req.prev_scenes,
+            temperature=req.temperature,
+            max_tokens=req.max_tokens,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Ollama error: {exc}")
+    return {"scene_text": scene_text}

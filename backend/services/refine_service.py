@@ -19,6 +19,17 @@ DEFAULT_TAGS = {
     "scene_type": "미분류",
 }
 
+DEFAULT_ANALYSIS = {
+    "genre": "미분류",
+    "core_event": "",
+    "characters": [],
+    "emotional_arc": "",
+    "hook": "",
+    "summary": "",
+    "narrative_technique": "",
+    "is_content": True,
+}
+
 
 # ---------------------------------------------------------------------------
 # 1. chunk_text
@@ -152,6 +163,89 @@ def _extract_json(text: str) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# 2b. correct_chunk (Pass 1: STT correction)
+# ---------------------------------------------------------------------------
+
+CORRECT_PROMPT = """다음은 유튜브 영상의 한국어 음성 자동 전사(STT/자막) 텍스트야.
+음성 인식 오류로 인해 동음이의어 혼동, 받침 탈락, 단어 경계 오류가 많아.
+
+예시:
+- "사진과" → "사진관" (동음이의어)
+- "현상행" → "현상액" (동음이의어)
+- "많치" → "많지" (받침 오류)
+- "시공 불리" → "시공 불량" (동음이의어)
+
+위와 같은 STT 전사 오류를 맥락에 맞게 교정해서, 교정된 전체 텍스트만 출력해줘.
+원문의 줄바꿈 구조는 그대로 유지하고, 확신이 없으면 원문 그대로 둬.
+
+텍스트:
+"""
+
+
+async def correct_chunk(text: str, model: str = "gemma4") -> str:
+    """Pass 1: STT 오타 교정. 자유 텍스트 출력 (format: json 미사용)."""
+    payload = {
+        "model": model,
+        "prompt": CORRECT_PROMPT + text,
+        "stream": False,
+        "options": {"temperature": 0.2, "num_predict": 4096},
+    }
+    try:
+        async with httpx.AsyncClient(base_url=OLLAMA_BASE, timeout=TIMEOUT) as client:
+            resp = await client.post("/api/generate", json=payload)
+            resp.raise_for_status()
+            corrected = resp.json().get("response", "").strip()
+            if len(corrected) < len(text) * 0.5:
+                return text
+            return corrected
+    except Exception:
+        return text
+
+
+# ---------------------------------------------------------------------------
+# 2c. analyze_chunk (Pass 2: detailed analysis)
+# ---------------------------------------------------------------------------
+
+ANALYZE_PROMPT = """다음 텍스트를 분석해서 반드시 JSON만 응답해.
+
+키:
+- genre: 세부 장르 (막장드라마, 복수극, 불륜미스터리 등 구체적)
+- core_event: 이 장면의 핵심 사건 (1문장, 구체적으로)
+- characters: 등장인물과 관계 (배열)
+- emotional_arc: 이 장면의 감정 변화 흐름 (시작 감정 → 끝 감정)
+- hook: 다음 장면으로 이어지는 궁금증/떡밥 (1문장)
+- summary: 무슨 일이 벌어지는지 2~3문장 요약
+- narrative_technique: 사용된 서사 기법 (예: 1인칭 회상, 반전, 복선, 클리프행어)
+- is_content: true면 실제 스토리 내용, false면 방송 인트로/아웃트로/광고/구독유도
+
+텍스트:
+"""
+
+
+async def analyze_chunk(text: str, model: str = "gemma4") -> dict:
+    """Pass 2: 상세 분석. JSON format 사용."""
+    payload = {
+        "model": model,
+        "prompt": ANALYZE_PROMPT + text,
+        "stream": False,
+        "options": {"temperature": 0.3, "num_predict": 1024},
+        "format": "json",
+    }
+    try:
+        async with httpx.AsyncClient(base_url=OLLAMA_BASE, timeout=TIMEOUT) as client:
+            resp = await client.post("/api/generate", json=payload)
+            resp.raise_for_status()
+            raw = resp.json().get("response", "{}")
+        result = _extract_json(raw)
+        for key, default in DEFAULT_ANALYSIS.items():
+            if key not in result:
+                result[key] = default
+        return result
+    except Exception:
+        return dict(DEFAULT_ANALYSIS)
+
+
+# ---------------------------------------------------------------------------
 # 3. build_jsonl_line
 # ---------------------------------------------------------------------------
 
@@ -271,3 +365,146 @@ def build_hierarchical_jsonl(
         }, ensure_ascii=False))
 
     return lines
+
+
+# ---------------------------------------------------------------------------
+# 5. 4-Task JSONL builder (v2)
+# ---------------------------------------------------------------------------
+
+def _get_position(index: int, total: int) -> str:
+    ratio = index / total if total > 0 else 0
+    if ratio < 0.15:
+        return "도입"
+    elif ratio < 0.6:
+        return "전개"
+    elif ratio < 0.85:
+        return "절정"
+    return "결말"
+
+
+def _tail(text: str, max_chars: int = 500) -> str:
+    return text[-max_chars:] if len(text) > max_chars else text
+
+
+def build_4task_jsonl(
+    episode_title: str,
+    chunks: list[dict],
+) -> tuple[list[str], dict]:
+    """Build 4-Task JSONL lines + outline for one episode.
+
+    chunks: list of {text, corrected_text, analysis, episode}
+    Returns (jsonl_lines, outline_dict)
+    """
+    content_chunks = [
+        c for c in chunks
+        if c.get("analysis", {}).get("is_content", True)
+    ]
+    if not content_chunks:
+        return [], {}
+
+    total = len(content_chunks)
+    genre = content_chunks[0].get("analysis", {}).get("genre", "미분류")
+    lines: list[str] = []
+
+    # Build outline scenes
+    outline_scenes = []
+    for i, c in enumerate(content_chunks):
+        a = c.get("analysis", {})
+        position = _get_position(i, total)
+        outline_scenes.append({
+            "index": i + 1,
+            "position": position,
+            "core_event": a.get("core_event", ""),
+            "emotional_arc": a.get("emotional_arc", ""),
+            "hook": a.get("hook", ""),
+            "summary": a.get("summary", ""),
+        })
+
+    outline_dict = {
+        "episode": episode_title,
+        "genre": genre,
+        "scenes": outline_scenes,
+    }
+
+    # --- Task 1: Outline ---
+    outline_text = "\n\n".join(
+        f"장면 {s['index']}/{total} ({s['position']}): {s['core_event']}\n"
+        f"  감정: {s['emotional_arc']}\n"
+        f"  떡밥: {s['hook']}"
+        for s in outline_scenes
+    )
+    lines.append(json.dumps({
+        "instruction": (
+            f"장르: {genre} / 제목: {episode_title[:60]}\n"
+            "1시간 분량 스크립트의 전체 아웃라인을 작성해줘"
+        ),
+        "input": "",
+        "output": outline_text,
+    }, ensure_ascii=False))
+
+    # --- Task 2: Scene expansion with context ---
+    for i, c in enumerate(content_chunks):
+        a = c.get("analysis", {})
+        text = c.get("corrected_text") or c.get("text", "")
+
+        prev_start = max(0, i - 5)
+        prev_flow = " → ".join(
+            f"[{j+1}] {content_chunks[j].get('analysis', {}).get('core_event', '')[:60]}"
+            for j in range(prev_start, i)
+        )
+        prev_input = (
+            _tail(content_chunks[i - 1].get("corrected_text") or content_chunks[i - 1].get("text", ""))
+            if i > 0 else ""
+        )
+
+        lines.append(json.dumps({
+            "instruction": (
+                f"장르: {genre}\n"
+                f"에피소드: {episode_title[:60]}\n"
+                f"장면 {i+1}/{total}\n"
+                f"현재 장면: {a.get('core_event', '')}\n"
+                + (f"이전 흐름: {prev_flow}\n" if prev_flow else "")
+                + "이 장면을 써줘"
+            ),
+            "input": prev_input,
+            "output": text,
+        }, ensure_ascii=False))
+
+    # --- Task 3: Continuation (adjacent content pairs) ---
+    for i in range(1, len(content_chunks)):
+        prev_c = content_chunks[i - 1]
+        curr_c = content_chunks[i]
+        curr_a = curr_c.get("analysis", {})
+        prev_text = prev_c.get("corrected_text") or prev_c.get("text", "")
+        curr_text = curr_c.get("corrected_text") or curr_c.get("text", "")
+
+        lines.append(json.dumps({
+            "instruction": (
+                f"장르: {genre}\n"
+                f"에피소드: {episode_title[:60]}\n"
+                f"장면 위치: {i+1}/{total}\n"
+                f"감정 흐름: {curr_a.get('emotional_arc', '')}\n"
+                "이어서 써줘"
+            ),
+            "input": _tail(prev_text),
+            "output": curr_text,
+        }, ensure_ascii=False))
+
+    # --- Task 4: Style ---
+    for c in content_chunks:
+        a = c.get("analysis", {})
+        text = c.get("corrected_text") or c.get("text", "")
+
+        lines.append(json.dumps({
+            "instruction": (
+                f"장르: {a.get('genre', '미분류')} / "
+                f"핵심사건: {a.get('core_event', '')} / "
+                f"감정: {a.get('emotional_arc', '')} / "
+                f"기법: {a.get('narrative_technique', '')}\n"
+                "이 장면을 써줘"
+            ),
+            "input": "",
+            "output": text,
+        }, ensure_ascii=False))
+
+    return lines, outline_dict

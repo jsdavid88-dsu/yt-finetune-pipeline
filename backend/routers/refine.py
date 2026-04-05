@@ -32,6 +32,10 @@ from services.refine_service import (
     build_jsonl_line,
     summarize_episode,
     build_hierarchical_jsonl,
+    correct_chunk,
+    analyze_chunk,
+    build_4task_jsonl,
+    DEFAULT_ANALYSIS,
 )
 
 router = APIRouter(prefix="/api/refine", tags=["refine"])
@@ -109,14 +113,12 @@ async def _run_auto_process(
     chunk_size: int | None = None,
     model: str | None = None,
 ) -> None:
-    """Background: split episodes → chunk → tag → summarize → build hierarchical JSONL."""
+    """Background: split episodes → chunk → correct → analyze → build 4-Task JSONL."""
     job.status = JobStatus.running
     try:
-        # Load preset defaults for this project
         preset = _load_project_preset(job.project_id)
         effective_chunk_size = chunk_size if chunk_size is not None else preset.get("chunk_size", 1500)
         effective_model = model if model is not None else preset.get("tag_model", "gemma4")
-        tag_prompt: str | None = preset.get("tag_prompt")
 
         proj_dir = DATA_DIR / job.project_id
         raw_path = proj_dir / "raw.txt"
@@ -133,18 +135,16 @@ async def _run_auto_process(
             job.error = "raw.txt가 비어 있습니다."
             return
 
-        # Split raw text into episodes by VIDEO markers
+        # Split into episodes
         episode_pattern = re.compile(
             r"--- VIDEO: (.+?) ---\n(.*?)(?=--- END VIDEO ---|$)",
             re.DOTALL,
         )
         episodes = episode_pattern.findall(raw_text)
-
         if not episodes:
-            # Fallback: treat entire text as one episode
             episodes = [("전체", raw_text)]
 
-        # First pass: chunk all episodes to determine total count
+        # Count total chunks
         episode_chunks_map: list[tuple[str, list[str]]] = []
         total_chunks = 0
         for ep_title, ep_text in episodes:
@@ -155,82 +155,80 @@ async def _run_auto_process(
         job.total = total_chunks
         job.chunks = []
 
-        # Step 1 & 2: For each episode, chunk → tag
+        # Process each episode: correct → analyze → build JSONL
+        all_jsonl_lines: list[str] = []
+        all_outlines: list[dict] = []
+        all_chunks_json: list[dict] = []
         global_index = 0
-        all_episode_data: list[dict] = []  # Per-episode collected data
 
         for ep_title, ep_chunks in episode_chunks_map:
-            episode_tagged_chunks: list[dict] = []
+            episode_chunk_data: list[dict] = []
 
-            for chunk_text in ep_chunks:
-                chunk_obj = ChunkData(index=global_index, text=chunk_text)
+            for chunk_text_raw in ep_chunks:
+                chunk_obj = ChunkData(index=global_index, text=chunk_text_raw)
                 job.chunks.append(chunk_obj)
 
+                # Pass 1: STT correction
                 try:
-                    tags = await rs_tag_chunk(chunk_obj.text, model=effective_model, prompt_template=tag_prompt)
-                    chunk_obj.tags = ChunkTag(**tags)
+                    corrected = await correct_chunk(chunk_text_raw, model=effective_model)
+                except Exception:
+                    corrected = chunk_text_raw
+
+                # Pass 2: Detailed analysis
+                try:
+                    analysis = await analyze_chunk(corrected, model=effective_model)
                 except RuntimeError as exc:
-                    # Ollama not running
                     job.status = JobStatus.failed
                     job._finished_at = time.time()
                     job.error = str(exc)
                     return
                 except Exception:
-                    chunk_obj.tags = ChunkTag(
-                        genre="미분류", topic="미분류", mood="미분류", scene_type="미분류"
-                    )
+                    analysis = dict(DEFAULT_ANALYSIS)
+
+                # Back-fill ChunkData for UI compatibility
+                chunk_obj.tags = ChunkTag(
+                    genre=analysis.get("genre", "미분류"),
+                    topic=analysis.get("core_event", "미분류"),
+                    mood=analysis.get("emotional_arc", "미분류"),
+                    scene_type=analysis.get("narrative_technique", "미분류"),
+                )
+
+                episode_chunk_data.append({
+                    "text": chunk_text_raw,
+                    "corrected_text": corrected,
+                    "analysis": analysis,
+                    "episode": ep_title,
+                })
 
                 global_index += 1
                 job.processed = global_index
 
-                tags_dict = chunk_obj.tags.model_dump() if chunk_obj.tags else {}
-                episode_tagged_chunks.append({
-                    "text": chunk_obj.text,
-                    "tags": tags_dict,
-                })
+            # Build 4-Task JSONL + outline
+            ep_lines, ep_outline = build_4task_jsonl(ep_title, episode_chunk_data)
+            all_jsonl_lines.extend(ep_lines)
+            if ep_outline:
+                all_outlines.append(ep_outline)
 
-            # Step 3: Summarize each episode (one Ollama call per episode)
-            ep_full_text = "\n\n".join(ep_chunks)
-            episode_summary = await summarize_episode(ep_full_text, ep_title, model=effective_model)
-
-            all_episode_data.append({
-                "title": ep_title,
-                "summary": episode_summary,
-                "chunks": episode_tagged_chunks,
-            })
-
-        # Step 4: Build hierarchical JSONL and chunks.json
-        jsonl_lines: list[str] = []
-        chunks_json: list[dict] = []
-        chunk_idx = 0
-
-        for ep_data in all_episode_data:
-            # Build 3-level hierarchical JSONL for this episode
-            ep_lines = build_hierarchical_jsonl(
-                ep_data["title"],
-                ep_data["summary"],
-                ep_data["chunks"],
-            )
-            jsonl_lines.extend(ep_lines)
-
-            # Build chunks.json with episode field
-            for c in ep_data["chunks"]:
-                chunks_json.append({
-                    "index": chunk_idx,
+            for c in episode_chunk_data:
+                all_chunks_json.append({
+                    "index": len(all_chunks_json),
                     "text": c["text"],
-                    "tags": c["tags"],
-                    "episode": ep_data["title"],
+                    "corrected_text": c["corrected_text"],
+                    "analysis": c["analysis"],
+                    "episode": c["episode"],
                 })
-                chunk_idx += 1
 
         # Save outputs
         proj_dir.mkdir(parents=True, exist_ok=True)
 
         (proj_dir / "chunks.json").write_text(
-            json.dumps(chunks_json, ensure_ascii=False, indent=2), encoding="utf-8"
+            json.dumps(all_chunks_json, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        (proj_dir / "outlines.json").write_text(
+            json.dumps(all_outlines, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         (proj_dir / "dataset.jsonl").write_text(
-            "\n".join(jsonl_lines), encoding="utf-8"
+            "\n".join(all_jsonl_lines), encoding="utf-8"
         )
 
         job.status = JobStatus.completed

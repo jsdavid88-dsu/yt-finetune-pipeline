@@ -24,7 +24,7 @@ def main():
     learning_rate = config.get("learning_rate", 2e-4)
     batch_size = config.get("batch_size", 4)
     lora_rank = config.get("lora_rank", 16)
-    max_seq_length = config.get("max_seq_length", 2048)
+    max_seq_length = config.get("max_seq_length", 4096)
 
     def update_progress(status, epoch=0, total_epochs=0, loss=None, error=None):
         progress = {

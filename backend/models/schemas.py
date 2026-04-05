@@ -174,6 +174,17 @@ class ChunkTag(BaseModel):
     scene_type: str = ""
 
 
+class ChunkAnalysis(BaseModel):
+    genre: str = "미분류"
+    core_event: str = ""
+    characters: list[str] = []
+    emotional_arc: str = ""
+    hook: str = ""
+    summary: str = ""
+    narrative_technique: str = ""
+    is_content: bool = True
+
+
 class ChunkData(BaseModel):
     index: int
     text: str
@@ -207,7 +218,7 @@ class TrainConfig(BaseModel):
     learning_rate: float = 2e-4
     num_epochs: int = 3
     batch_size: int = 4
-    max_seq_length: int = 2048
+    max_seq_length: int = 4096
     gradient_accumulation_steps: int = 4
 
 
@@ -236,6 +247,36 @@ class ExportRequest(BaseModel):
     project_id: str
     results: list[dict[str, str]]
     format: str = "txt"  # txt or md
+
+
+class StoryOutlineRequest(BaseModel):
+    model: str
+    genre: str
+    topic: str
+    num_scenes: int = 12
+    temperature: float = 0.7
+    max_tokens: int = 2048
+
+
+class StoryGenerateRequest(BaseModel):
+    model: str
+    genre: str
+    topic: str
+    outline: str  # 사용자가 확인/수정한 아웃라인
+    temperature: float = 0.7
+    max_tokens: int = 2048
+
+
+class SceneRegenerateRequest(BaseModel):
+    model: str
+    genre: str
+    topic: str
+    outline: str
+    scene_num: int
+    scene_description: str
+    prev_scenes: list[str] = []  # 이전 장면 텍스트들
+    temperature: float = 0.7
+    max_tokens: int = 2048
 
 
 class PromptTemplate(BaseModel):
