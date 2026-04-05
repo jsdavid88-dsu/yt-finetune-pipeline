@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import time
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger("storyforge.collect")
 
 from fastapi import APIRouter, HTTPException
 
@@ -127,6 +130,8 @@ async def _run_collect_job(job: CollectJob, top_percent: int | None = None) -> N
             cutoff = max(1, len(entries) * top_percent // 100)
             entries = entries[:cutoff]
 
+        logger.info(f"[수집] {len(entries)}개 영상 수집 시작 (project: {job.project_id})")
+
         # populate video list
         job.videos = [
             VideoInfo(
@@ -171,6 +176,7 @@ async def _run_collect_job(job: CollectJob, top_percent: int | None = None) -> N
                 continue
 
             vid.status = VideoStatus.processing
+            logger.info(f"[수집] {idx+1}/{len(entries)} 처리 중: {vid.title[:50]}")
             try:
                 text, route = await extract_subtitle_for_video(entry)
                 if text:

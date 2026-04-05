@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import time
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger("storyforge.refine")
 
 from fastapi import APIRouter, HTTPException
 
@@ -154,6 +157,7 @@ async def _run_auto_process(
 
         job.total = total_chunks
         job.chunks = []
+        logger.info(f"[정제] {len(episode_chunks_map)}개 에피소드, {total_chunks}개 청크 처리 시작")
 
         # Process each episode: correct → analyze → build JSONL
         all_jsonl_lines: list[str] = []
@@ -161,12 +165,14 @@ async def _run_auto_process(
         all_chunks_json: list[dict] = []
         global_index = 0
 
-        for ep_title, ep_chunks in episode_chunks_map:
+        for ep_idx, (ep_title, ep_chunks) in enumerate(episode_chunks_map):
+            logger.info(f"[정제] 에피소드 {ep_idx+1}/{len(episode_chunks_map)}: {ep_title[:50]}")
             episode_chunk_data: list[dict] = []
 
             for chunk_text_raw in ep_chunks:
                 chunk_obj = ChunkData(index=global_index, text=chunk_text_raw)
                 job.chunks.append(chunk_obj)
+                logger.info(f"[정제] 청크 {global_index+1}/{total_chunks} (Pass1: 교정 → Pass2: 분석)")
 
                 # Pass 1: STT correction
                 try:
@@ -231,10 +237,12 @@ async def _run_auto_process(
             "\n".join(all_jsonl_lines), encoding="utf-8"
         )
 
+        logger.info(f"[정제] 완료! dataset.jsonl: {len(all_jsonl_lines)}줄, outlines: {len(all_outlines)}개")
         job.status = JobStatus.completed
         job._finished_at = time.time()
 
     except Exception as exc:
+        logger.error(f"[정제] 실패: {exc}")
         job.status = JobStatus.failed
         job._finished_at = time.time()
         job.error = str(exc)
