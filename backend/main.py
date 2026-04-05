@@ -47,9 +47,15 @@ async def health():
 async def shutdown():
     """Gracefully shutdown the server."""
     import os
-    import signal
+    import sys
+    import threading
 
-    os.kill(os.getpid(), signal.SIGTERM)
+    def _kill():
+        import time
+        time.sleep(0.5)
+        os._exit(0)
+
+    threading.Thread(target=_kill, daemon=True).start()
     return {"status": "shutting_down"}
 
 
