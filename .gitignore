@@ -22,3 +22,4 @@ backend/data/
 # OS
 .DS_Store
 Thumbs.db
+.train-venv/

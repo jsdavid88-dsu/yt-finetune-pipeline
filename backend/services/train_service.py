@@ -9,6 +9,7 @@ from typing import Any
 
 _SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+_VENV_PYTHON = Path(__file__).resolve().parent.parent / ".train-venv" / "Scripts" / "python.exe"
 _train_processes: dict[str, subprocess.Popen] = {}
 
 
@@ -47,9 +48,12 @@ def start_training(project_id: str, config: dict[str, Any]) -> dict:
         json.dumps({"status": "starting", "progress": 0}), encoding="utf-8"
     )
 
+    # Use training venv python if available, else system python
+    train_python = str(_VENV_PYTHON) if _VENV_PYTHON.exists() else sys.executable
+
     proc = subprocess.Popen(
         [
-            sys.executable,
+            train_python,
             "-u",  # unbuffered output
             str(_SCRIPTS_DIR / "train_lora.py"),
             "--config",
