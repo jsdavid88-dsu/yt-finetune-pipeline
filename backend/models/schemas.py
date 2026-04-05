@@ -215,14 +215,17 @@ class TrainStartRequest(BaseModel):
 
 
 class TrainConfig(BaseModel):
-    lora_r: int = 16
-    lora_alpha: int = 32
-    lora_dropout: float = 0.05
-    learning_rate: float = 2e-4
-    num_epochs: int = 3
-    batch_size: int = 4
+    lora_r: int = 32
+    lora_alpha: int = 64
+    lora_dropout: float = 0.0
+    learning_rate: float = 1e-4
+    num_epochs: int = 2
+    batch_size: int = 2
     max_seq_length: int = 4096
-    gradient_accumulation_steps: int = 4
+    gradient_accumulation_steps: int = 16
+    warmup_ratio: float = 0.05
+    weight_decay: float = 0.01
+    eval_split: float = 0.05
 
 
 # ---------------------------------------------------------------------------

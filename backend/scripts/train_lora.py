@@ -19,20 +19,27 @@ def main():
     output_dir = project_dir / "adapters"
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # --- Hyperparameters ---
     base_model = config.get("base_model", "unsloth/gemma-3-4b-it-bnb-4bit")
-    num_epochs = config.get("num_epochs", 3)
-    learning_rate = config.get("learning_rate", 2e-4)
-    batch_size = config.get("batch_size", 4)
-    lora_rank = config.get("lora_rank", 16)
+    num_epochs = config.get("num_epochs", 2)
+    learning_rate = config.get("learning_rate", 1e-4)
+    batch_size = config.get("batch_size", 2)
+    gradient_accumulation_steps = config.get("gradient_accumulation_steps", 16)
+    lora_rank = config.get("lora_rank", 32)
+    lora_alpha = config.get("lora_alpha", lora_rank * 2)  # ratio 2
     max_seq_length = config.get("max_seq_length", 4096)
+    warmup_ratio = config.get("warmup_ratio", 0.05)
+    weight_decay = config.get("weight_decay", 0.01)
+    eval_split = config.get("eval_split", 0.05)  # 5% for validation
 
-    def update_progress(status, epoch=0, total_epochs=0, loss=None, error=None):
+    def update_progress(status, epoch=0, total_epochs=0, loss=None, eval_loss=None, error=None):
         progress = {
             "status": status,
             "epoch": epoch,
             "total_epochs": total_epochs,
             "progress": int(epoch / total_epochs * 100) if total_epochs else 0,
             "loss": loss,
+            "eval_loss": eval_loss,
             "error": error,
         }
         progress_file.write_text(
@@ -51,7 +58,11 @@ def main():
 
         from datasets import load_dataset
         from trl import SFTTrainer
-        from transformers import TrainingArguments, TrainerCallback
+        from transformers import TrainingArguments, TrainerCallback, EarlyStoppingCallback
+        import torch
+
+        # Detect bf16 support
+        use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
 
         update_progress("loading_model")
         model, tokenizer = FastLanguageModel.from_pretrained(
@@ -72,13 +83,25 @@ def main():
                 "up_proj",
                 "down_proj",
             ],
-            lora_alpha=lora_rank,
+            lora_alpha=lora_alpha,
             lora_dropout=0,
             bias="none",
             use_gradient_checkpointing="unsloth",
+            use_rslora=True,
         )
 
+        # --- Dataset ---
         dataset = load_dataset("json", data_files=str(dataset_path), split="train")
+        dataset = dataset.shuffle(seed=42)
+
+        # Train/eval split
+        if eval_split > 0 and len(dataset) > 100:
+            split = dataset.train_test_split(test_size=eval_split, seed=42)
+            train_dataset = split["train"]
+            eval_dataset = split["test"]
+        else:
+            train_dataset = dataset
+            eval_dataset = None
 
         alpaca_prompt = (
             "Below is an instruction that describes a task. "
@@ -96,34 +119,66 @@ def main():
                 )
             return {"text": texts}
 
-        dataset = dataset.map(formatting_func, batched=True)
+        train_dataset = train_dataset.map(formatting_func, batched=True)
+        if eval_dataset is not None:
+            eval_dataset = eval_dataset.map(formatting_func, batched=True)
+
         update_progress("training", 0, num_epochs)
 
         class ProgressCallback(TrainerCallback):
             def on_epoch_end(self, _args, state, **kwargs):
                 current_epoch = int(state.epoch)
-                current_loss = (
-                    state.log_history[-1].get("loss") if state.log_history else None
-                )
-                update_progress("training", current_epoch, num_epochs, current_loss)
+                current_loss = None
+                current_eval_loss = None
+                if state.log_history:
+                    for entry in reversed(state.log_history):
+                        if current_loss is None and "loss" in entry:
+                            current_loss = entry["loss"]
+                        if current_eval_loss is None and "eval_loss" in entry:
+                            current_eval_loss = entry["eval_loss"]
+                        if current_loss is not None and current_eval_loss is not None:
+                            break
+                update_progress("training", current_epoch, num_epochs, current_loss, current_eval_loss)
+
+        # --- Training Arguments ---
+        training_args = TrainingArguments(
+            per_device_train_batch_size=batch_size,
+            gradient_accumulation_steps=gradient_accumulation_steps,
+            num_train_epochs=num_epochs,
+            learning_rate=learning_rate,
+            lr_scheduler_type="cosine",
+            warmup_ratio=warmup_ratio,
+            weight_decay=weight_decay,
+            bf16=use_bf16,
+            fp16=not use_bf16,
+            logging_steps=10,
+            output_dir=str(output_dir / "checkpoints"),
+            save_strategy="steps",
+            save_steps=500,
+            seed=42,
+            optim="adamw_8bit",
+        )
+
+        # Add eval if we have eval dataset
+        if eval_dataset is not None:
+            training_args.eval_strategy = "steps"
+            training_args.eval_steps = 500
+            training_args.load_best_model_at_end = True
+            training_args.metric_for_best_model = "eval_loss"
+
+        callbacks = [ProgressCallback()]
+        if eval_dataset is not None:
+            callbacks.append(EarlyStoppingCallback(early_stopping_patience=3))
 
         trainer = SFTTrainer(
             model=model,
             tokenizer=tokenizer,
-            train_dataset=dataset,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
             dataset_text_field="text",
             max_seq_length=max_seq_length,
-            args=TrainingArguments(
-                per_device_train_batch_size=batch_size,
-                num_train_epochs=num_epochs,
-                learning_rate=learning_rate,
-                fp16=True,
-                logging_steps=1,
-                output_dir=str(output_dir / "checkpoints"),
-                save_strategy="epoch",
-                seed=42,
-            ),
-            callbacks=[ProgressCallback()],
+            args=training_args,
+            callbacks=callbacks,
         )
 
         trainer.train()
