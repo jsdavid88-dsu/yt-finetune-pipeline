@@ -45,18 +45,20 @@ export default function CollectTab({ project, addLog, videos, setVideos }: Props
   const handlePreviewPlaylist = async (url: string) => {
     if (!project) {
       addLog('warn', '먼저 프로젝트를 선택하세요.');
-      return;
+      return null;
     }
     addLog('info', `재생목록 정보 조회 중...`);
     try {
       const info = await getPlaylistInfo(url, project.id);
       addLog('info', `재생목록에 ${info.count}개 영상이 있습니다.`);
+      return info;
     } catch (err) {
       addLog('error', `재생목록 조회 실패: ${err instanceof Error ? err.message : '오류'}`);
+      return null;
     }
   };
 
-  const handleCollect = async (url: string, playlist: boolean) => {
+  const handleCollect = async (url: string, playlist: boolean, topPercent: number | null = null) => {
     if (!project) {
       addLog('warn', '먼저 프로젝트를 선택하세요.');
       return;
@@ -67,7 +69,7 @@ export default function CollectTab({ project, addLog, videos, setVideos }: Props
     addLog('info', `수집 시작: ${url}`);
 
     try {
-      const resp = await collectStart(url, playlist, project.id);
+      const resp = await collectStart(url, playlist, project.id, topPercent);
       const jid = resp.jobId || (resp as any).job_id;
       setJobId(jid);
       addLog('info', `수집 작업 생성됨 (ID: ${jid})`);

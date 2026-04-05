@@ -32,11 +32,14 @@ async function request<T>(
 export async function collectStart(
   url: string,
   playlist: boolean,
-  projectId: string
+  projectId: string,
+  topPercent?: number | null,
 ): Promise<{ jobId: string }> {
+  const body: any = { url, project_id: projectId };
+  if (topPercent) body.top_percent = topPercent;
   return request('/api/collect/start', {
     method: 'POST',
-    body: JSON.stringify({ url, project_id: projectId }),
+    body: JSON.stringify(body),
   });
 }
 
@@ -51,7 +54,7 @@ export async function collectResult(jobId: string): Promise<CollectJob> {
 export async function getPlaylistInfo(
   url: string,
   projectId: string
-): Promise<{ count: number; videos: { video_id: string; title: string }[] }> {
+): Promise<{ count: number; videos: { video_id: string; title: string; view_count: number; duration: number }[] }> {
   return request('/api/collect/playlist-info', {
     method: 'POST',
     body: JSON.stringify({ url, project_id: projectId }),
