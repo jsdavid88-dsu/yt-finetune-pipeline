@@ -16,7 +16,8 @@
 
 #### Pass 1: STT 오타 교정
 
-gemma4에게 청크 텍스트를 비-JSON 자유 텍스트로 교정 요청.
+프리셋의 `tag_model`(기본 gemma4)로 청크 텍스트를 교정 요청.
+Ollama 호출 시 `format: "json"` **사용하지 않음** — 자유 텍스트 출력.
 
 프롬프트 핵심:
 - STT 오류 유형 예시 제공 (동음이의어, 받침 탈락 등)
@@ -25,7 +26,7 @@ gemma4에게 청크 텍스트를 비-JSON 자유 텍스트로 교정 요청.
 
 #### Pass 2: 상세 분석 (JSON)
 
-교정된 텍스트로 7-key 분석 요청:
+교정된 텍스트로 8-key 분석 요청 (`format: "json"` 사용):
 
 ```json
 {
@@ -59,6 +60,14 @@ data/{project_id}/
   │     episode
   │   }]
   ├── outlines.json        ← 에피소드별 아웃라인 (신규, 코드 조립)
+  │   [{
+  │     episode: "에피소드 제목",
+  │     genre: "장르",
+  │     scenes: [{
+  │       index: 1, position: "도입",
+  │       core_event, emotional_arc, hook, summary
+  │     }, ...]
+  │   }]
   └── dataset.jsonl        ← 4-Task 학습 데이터 (신규 구조)
 ```
 
@@ -77,6 +86,9 @@ data/{project_id}/
 아웃라인은 각 청크의 `analysis.core_event` + `analysis.emotional_arc` + `analysis.hook`을 코드로 조립. Ollama 추가 호출 없음.
 
 **Task 2 — 장면 확장 + 맥락** (청크당 1개)
+
+"이전 흐름"은 이전 청크들의 `analysis.core_event`를 `→`로 연결하여 구성.
+`input`은 직전 청크의 마지막 500자 (청크가 500자 미만이면 전체).
 
 ```json
 {
@@ -106,7 +118,7 @@ data/{project_id}/
 }
 ```
 
-`is_content: false`인 청크는 Task 2/3/4에서 제외. Task 3에서 건너뛴 청크 쌍도 제외.
+`is_content: false`인 청크는 Task 2/3/4에서 제외. Task 3는 유효 청크만 연속으로 취급 — 비내용 청크로 중간에 끊기면 그 앞뒤를 직접 연결하지 않고 건너뜀.
 
 #### 예상 수량
 
@@ -139,7 +151,8 @@ Step 1: 아웃라인 생성 (Task 1 능력)
     → 장면 10~15개짜리 아웃라인
     ↓
 Step 2: 아웃라인 파싱
-    코드로 아웃라인을 장면 목록으로 분리
+    정규식으로 파싱: "장면 {N}/{total} ({position}): {description}"
+    파싱 실패 시 줄 단위로 fallback 분리
     ↓
 Step 3: 장면별 순차 생성 (Task 2 능력)
     장면 1 생성:
@@ -174,6 +187,7 @@ POST /api/generate/story
 응답: SSE 스트리밍
 - 아웃라인 생성 중 → `{"step": "outline", "content": "..."}`
 - 장면 N 생성 중 → `{"step": "scene", "scene_num": 3, "total": 12, "content": "..."}`
+- 에러 → `{"step": "error", "scene_num": 3, "error": "timeout"}` (해당 장면 재시도 1회, 실패 시 스킵 후 다음 장면)
 - 완료 → `{"step": "done", "full_text": "..."}`
 
 #### 프론트엔드 UI
@@ -194,6 +208,7 @@ POST /api/generate/story
 | `routers/refine.py` | 새 정제 흐름 호출, outlines.json 저장 |
 | `models/schemas.py` | 분석 결과 스키마, 스토리 생성 요청 스키마 추가 |
 | `routers/generate.py` | `/story` 연쇄 생성 엔드포인트 추가 |
+| `services/story_service.py` | 연쇄 생성 로직 (아웃라인 파싱, 순차 생성, 맥락 조립) — 신규 |
 | `services/ollama.py` | 변경 없음 (기존 generate/stream 사용) |
 | `frontend/src/components/GenerateTab.tsx` | 스토리 생성 UI 추가 |
 
@@ -202,3 +217,17 @@ POST /api/generate/story
 - 에피소드 간 메타 구조 분석 (1400개 데이터로 자연 학습)
 - 별도 LoRA adapter 분리 (단일 adapter로 충분)
 - 교정 diff UI (교정은 best-effort, 원본은 raw.txt에 보존)
+- 기존 프로젝트 데이터 마이그레이션 (새 프로젝트에서 v2 정제 실행하면 됨)
+
+### 5. 토큰 예산
+
+학습 시 `max_seq_length: 4096`으로 설정 (기존 2048에서 상향).
+
+| Task | instruction 예상 | input | output | 합계 (한국어 토큰) |
+|------|-----------------|-------|--------|-------------------|
+| Task 1 | ~50 | 0 | ~1,000 | ~1,050 |
+| Task 2 (최대, 장면15) | ~400 (이전흐름 14개) | ~200 | ~500 | ~1,100 |
+| Task 3 | ~100 | ~200 | ~500 | ~800 |
+| Task 4 | ~100 | 0 | ~500 | ~600 |
+
+4096 토큰 안에 모두 여유있게 들어감. Task 2의 이전흐름이 너무 길면 최근 5개까지만 포함하고 나머지는 생략.
