@@ -192,14 +192,32 @@ def main():
 
         update_progress("registering", num_epochs, num_epochs)
 
+        # Map unsloth model to Ollama base model
+        ollama_base_map = {
+            "gemma-4-E4B": "gemma4",
+            "gemma-4-E12B": "gemma4:12b",
+            "gemma-4-E27B": "gemma4:27b",
+            "gemma-3-4b": "gemma4",
+            "llama-3.1-8b": "llama3.1:8b",
+            "Qwen2.5-7B": "qwen2.5:7b",
+        }
+        ollama_base = "gemma4"
+        for key, val in ollama_base_map.items():
+            if key in base_model:
+                ollama_base = val
+                break
+
+        # Ensure Ollama has the matching base model
+        import subprocess as sp
+        sp.run(["ollama", "pull", ollama_base], capture_output=True)
+
         project_name = project_dir.name
         gguf_files = list(output_dir.glob("*.gguf"))
         if gguf_files:
             modelfile_path = output_dir / "Modelfile"
             modelfile_path.write_text(
-                f"FROM gemma4\nADAPTER {gguf_files[0].name}\n", encoding="utf-8"
+                f"FROM {ollama_base}\nADAPTER {gguf_files[0].name}\n", encoding="utf-8"
             )
-            import subprocess as sp
 
             sp.run(
                 [
