@@ -17,11 +17,11 @@ async def gpu_check():
 @router.get("/models")
 async def list_models():
     return [
-        {"id": "unsloth/gemma-4-E4B-it", "name": "Gemma 4 8B (E4B)", "params": "8B", "vram": "~12GB"},
-        {"id": "unsloth/gemma-4-E12B-it", "name": "Gemma 4 12B (E12B)", "params": "12B", "vram": "~18GB"},
-        {"id": "unsloth/gemma-4-E27B-it", "name": "Gemma 4 27B (E27B)", "params": "27B", "vram": "~24GB+"},
+        {"id": "unsloth/gemma-4-E4B-it-unsloth-bnb-4bit", "name": "Gemma 4 8B (4-bit)", "params": "8B", "vram": "~12GB"},
+        {"id": "unsloth/gemma-4-E4B-it", "name": "Gemma 4 8B", "params": "8B", "vram": "~16GB"},
+        {"id": "unsloth/gemma-4-31B-it-unsloth-bnb-4bit", "name": "Gemma 4 31B (4-bit)", "params": "31B", "vram": "~24GB+"},
+        {"id": "unsloth/gemma-3-12b-it-unsloth-bnb-4bit", "name": "Gemma 3 12B (4-bit)", "params": "12B", "vram": "~12GB"},
         {"id": "unsloth/llama-3.1-8b-bnb-4bit", "name": "LLaMA 3.1 8B (4-bit)", "params": "8B", "vram": "~12GB"},
-        {"id": "unsloth/Qwen2.5-7B-bnb-4bit", "name": "Qwen2.5 7B (4-bit)", "params": "7B", "vram": "~12GB"},
     ]
 
 
