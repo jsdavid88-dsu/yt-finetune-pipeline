@@ -52,8 +52,43 @@ def main():
             from unsloth import FastLanguageModel
         except ImportError:
             import subprocess as sp
+            import threading
 
-            sp.check_call([sys.executable, "-m", "pip", "install", "unsloth"])
+            # pip install with real-time progress updates
+            proc = sp.Popen(
+                [sys.executable, "-m", "pip", "install", "unsloth", "--progress-bar", "off"],
+                stdout=sp.PIPE, stderr=sp.STDOUT, text=True, encoding="utf-8", errors="replace",
+            )
+
+            def _read_pip_output():
+                last_line = ""
+                while True:
+                    line = proc.stdout.readline()
+                    if not line and proc.poll() is not None:
+                        break
+                    line = line.strip()
+                    if line:
+                        last_line = line
+                        # Update progress with pip output
+                        short = last_line[:80]
+                        update_progress("installing", error=None,
+                                        epoch=0, total_epochs=0)
+                        # Write pip status to a separate field
+                        progress = json.loads(progress_file.read_text(encoding="utf-8"))
+                        progress["detail"] = short
+                        progress_file.write_text(
+                            json.dumps(progress, ensure_ascii=False), encoding="utf-8"
+                        )
+
+            reader = threading.Thread(target=_read_pip_output, daemon=True)
+            reader.start()
+            proc.wait()
+            reader.join(timeout=5)
+
+            if proc.returncode != 0:
+                update_progress("failed", error="Unsloth 설치 실패. 터미널에서 'pip install unsloth'을 직접 실행해보세요.")
+                sys.exit(1)
+
             from unsloth import FastLanguageModel
 
         from datasets import load_dataset
