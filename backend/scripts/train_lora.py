@@ -20,7 +20,7 @@ def main():
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # --- Hyperparameters ---
-    base_model = config.get("base_model", "unsloth/gemma-3-4b-it-bnb-4bit")
+    base_model = config.get("base_model", "unsloth/gemma-4-E4B-it")
     num_epochs = config.get("num_epochs", 2)
     learning_rate = config.get("learning_rate", 1e-4)
     batch_size = config.get("batch_size", 2)

@@ -210,7 +210,7 @@ class RefineJob(BaseModel):
 
 class TrainStartRequest(BaseModel):
     project_id: str
-    base_model: str = "unsloth/llama-3-8b-bnb-4bit"
+    base_model: str = "unsloth/gemma-4-E4B-it"
     config: dict[str, Any] = {}
 
 
