@@ -139,7 +139,20 @@ async def _run_collect_job(job: CollectJob, top_percent: int | None = None) -> N
             for i, e in enumerate(entries)
         ]
 
-        # process each video sequentially with delay
+        # Setup incremental save
+        project_dir = _ensure_project_dir(job.project_id)
+        videos_json_path = project_dir / "videos.json"
+        raw_path = project_dir / "raw.txt"
+
+        # Load existing data for dedup
+        existing_videos: list[dict[str, Any]] = []
+        existing_ids: set[str] = set()
+        if videos_json_path.exists():
+            with open(videos_json_path, "r", encoding="utf-8") as f:
+                existing_videos = json.load(f)
+            existing_ids = {v["video_id"] for v in existing_videos}
+
+        # process each video sequentially with delay, saving incrementally
         for idx, entry in enumerate(entries):
             # Check if job was cancelled
             if job.job_id in _cancelled_jobs:
@@ -150,6 +163,13 @@ async def _run_collect_job(job: CollectJob, top_percent: int | None = None) -> N
                 return
 
             vid = job.videos[idx]
+
+            # Skip already collected
+            if vid.video_id in existing_ids:
+                vid.status = VideoStatus.done
+                vid.text = "(already collected)"
+                continue
+
             vid.status = VideoStatus.processing
             try:
                 text, route = await extract_subtitle_for_video(entry)
@@ -184,49 +204,24 @@ async def _run_collect_job(job: CollectJob, top_percent: int | None = None) -> N
                     vid.status = VideoStatus.error
                     vid.error = error_msg
 
+            # --- Incremental save: append this video immediately ---
+            if vid.status == VideoStatus.done and vid.text and vid.text != "(already collected)":
+                # Append to raw.txt
+                video_block = f"--- VIDEO: {vid.title} ---\n{vid.text}\n--- END VIDEO ---"
+                with open(raw_path, "a", encoding="utf-8") as f:
+                    prefix = "\n\n" if raw_path.stat().st_size > 0 else ""
+                    f.write(prefix + video_block)
+
+                # Append to videos.json
+                existing_videos.append(vid.model_dump())
+                existing_ids.add(vid.video_id)
+                videos_json_path.write_text(
+                    json.dumps(existing_videos, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+
             # Delay between requests to avoid rate limiting
             if idx < len(entries) - 1:
                 await asyncio.sleep(_COLLECT_DELAY)
-
-        # persist collected text to project directory (append, not overwrite)
-        project_dir = _ensure_project_dir(job.project_id)
-
-        # Load existing videos.json to detect already-collected video_ids
-        videos_json_path = project_dir / "videos.json"
-        existing_videos: list[dict[str, Any]] = []
-        existing_ids: set[str] = set()
-        if videos_json_path.exists():
-            with open(videos_json_path, "r", encoding="utf-8") as f:
-                existing_videos = json.load(f)
-            existing_ids = {v["video_id"] for v in existing_videos}
-
-        # Build new text parts only for videos not already collected
-        new_text_parts: list[str] = []
-        new_video_entries: list[dict[str, Any]] = []
-        for vid in job.videos:
-            if vid.video_id in existing_ids:
-                continue  # skip duplicates
-            new_video_entries.append(vid.model_dump())
-            if vid.text:
-                new_text_parts.append(
-                    f"--- VIDEO: {vid.title} ---\n{vid.text}\n--- END VIDEO ---"
-                )
-
-        # Append new text to raw.txt
-        if new_text_parts:
-            raw_path = project_dir / "raw.txt"
-            existing_text = ""
-            if raw_path.exists():
-                existing_text = raw_path.read_text(encoding="utf-8")
-            separator = "\n\n" if existing_text else ""
-            combined = existing_text + separator + "\n\n".join(new_text_parts)
-            raw_path.write_text(combined, encoding="utf-8")
-
-        # Merge new videos into existing videos.json
-        merged_videos = existing_videos + new_video_entries
-        videos_json_path.write_text(
-            json.dumps(merged_videos, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
 
         job.status = JobStatus.completed
         job._finished_at = time.time()
