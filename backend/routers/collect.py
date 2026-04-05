@@ -34,6 +34,13 @@ _jobs: dict[str, CollectJob] = {}
 # Track projects with a running collection to prevent concurrent runs
 _running_projects: set[str] = set()
 
+# Track cancelled jobs
+_cancelled_jobs: set[str] = set()
+
+# Delay between video requests (seconds) to avoid YouTube rate limiting
+_COLLECT_DELAY = 2.0
+_RATE_LIMIT_WAIT = 60  # seconds to wait when rate-limited
+
 _JOB_TTL = 3600  # seconds – remove finished jobs older than 1 hour
 _JOB_MAX = 100   # hard cap on total jobs kept in memory
 
@@ -132,8 +139,16 @@ async def _run_collect_job(job: CollectJob, top_percent: int | None = None) -> N
             for i, e in enumerate(entries)
         ]
 
-        # process each video sequentially
+        # process each video sequentially with delay
         for idx, entry in enumerate(entries):
+            # Check if job was cancelled
+            if job.job_id in _cancelled_jobs:
+                _cancelled_jobs.discard(job.job_id)
+                job.status = JobStatus.failed
+                job._finished_at = time.time()
+                job.error = "사용자가 수집을 중지했습니다."
+                return
+
             vid = job.videos[idx]
             vid.status = VideoStatus.processing
             try:
@@ -143,13 +158,35 @@ async def _run_collect_job(job: CollectJob, top_percent: int | None = None) -> N
                     vid.route = SubtitleRoute(route)
                     vid.status = VideoStatus.done
                 else:
-                    # Route B placeholder
                     vid.route = SubtitleRoute.ocr
                     vid.status = VideoStatus.error
                     vid.error = "No subtitles available. OCR route not yet implemented."
             except Exception as exc:
-                vid.status = VideoStatus.error
-                vid.error = str(exc)
+                error_msg = str(exc)
+                # Rate limit detection — wait and retry once
+                if "rate-limit" in error_msg.lower() or "rate_limit" in error_msg.lower() or "try again later" in error_msg.lower():
+                    vid.error = f"Rate limited, {_RATE_LIMIT_WAIT}초 대기 후 재시도..."
+                    await asyncio.sleep(_RATE_LIMIT_WAIT)
+                    try:
+                        text, route = await extract_subtitle_for_video(entry)
+                        if text:
+                            vid.text = text
+                            vid.route = SubtitleRoute(route)
+                            vid.status = VideoStatus.done
+                            vid.error = None
+                        else:
+                            vid.status = VideoStatus.error
+                            vid.error = "재시도 후에도 자막 없음"
+                    except Exception as exc2:
+                        vid.status = VideoStatus.error
+                        vid.error = f"재시도 실패: {exc2}"
+                else:
+                    vid.status = VideoStatus.error
+                    vid.error = error_msg
+
+            # Delay between requests to avoid rate limiting
+            if idx < len(entries) - 1:
+                await asyncio.sleep(_COLLECT_DELAY)
 
         # persist collected text to project directory (append, not overwrite)
         project_dir = _ensure_project_dir(job.project_id)
@@ -256,6 +293,18 @@ async def start_collection(req: CollectRequest):
     asyncio.create_task(_guarded_collect(job, req.top_percent))
 
     return {"job_id": job.job_id, "status": job.status}
+
+
+@router.post("/stop/{job_id}")
+async def stop_collection(job_id: str):
+    """Cancel a running collection job."""
+    job = _jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.status != JobStatus.running:
+        return {"status": "not_running"}
+    _cancelled_jobs.add(job_id)
+    return {"status": "stopping"}
 
 
 @router.get("/status/{job_id}")

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import type { Project, Video } from '../../types';
-import { collectStart, collectStatus, getPlaylistInfo, getProjectVideos } from '../../api';
+import { collectStart, collectStatus, collectStop, getPlaylistInfo, getProjectVideos } from '../../api';
 import UrlInput from './UrlInput';
 import VideoList from './VideoList';
 import TextPreview from './TextPreview';
@@ -164,6 +164,19 @@ export default function CollectTab({ project, addLog, videos, setVideos }: Props
           <div className="flex items-center gap-2 text-sm text-yellow-400">
             <div className="w-3 h-3 border-2 border-yellow-400/30 border-t-yellow-400 rounded-full animate-spin" />
             {progressText}
+            {jobId && (
+              <button
+                onClick={async () => {
+                  try {
+                    await collectStop(jobId);
+                    addLog('info', '수집 중지 요청...');
+                  } catch {}
+                }}
+                className="ml-2 px-2 py-0.5 bg-red-600 hover:bg-red-700 rounded text-xs text-white"
+              >
+                중지
+              </button>
+            )}
           </div>
           {totalCount > 0 && (
             <div className="w-full bg-gray-800 rounded-full h-2 overflow-hidden">

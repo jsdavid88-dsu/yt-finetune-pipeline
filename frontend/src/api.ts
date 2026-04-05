@@ -47,6 +47,10 @@ export async function collectStatus(jobId: string): Promise<CollectJob> {
   return request(`/api/collect/status/${jobId}`);
 }
 
+export async function collectStop(jobId: string): Promise<{ status: string }> {
+  return request(`/api/collect/stop/${jobId}`, { method: 'POST' });
+}
+
 export async function collectResult(jobId: string): Promise<CollectJob> {
   return request(`/api/collect/result/${jobId}`);
 }
