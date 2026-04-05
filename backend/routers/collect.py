@@ -96,7 +96,7 @@ def _ensure_project_dir(project_id: str) -> Path:
 # Background task: process collection job
 # ---------------------------------------------------------------------------
 
-async def _run_collect_job(job: CollectJob) -> None:
+async def _run_collect_job(job: CollectJob, top_percent: int | None = None) -> None:
     job.status = JobStatus.running
     try:
         # Support multiple URLs separated by newlines
@@ -114,11 +114,19 @@ async def _run_collect_job(job: CollectJob) -> None:
             job._finished_at = time.time()
             return
 
+        # Filter by top_percent if specified
+        if top_percent and 0 < top_percent < 100 and len(entries) > 1:
+            entries.sort(key=lambda e: e.get("view_count", 0) or 0, reverse=True)
+            cutoff = max(1, len(entries) * top_percent // 100)
+            entries = entries[:cutoff]
+
         # populate video list
         job.videos = [
             VideoInfo(
                 video_id=e.get("id", f"unknown_{i}"),
                 title=e.get("title", "Untitled"),
+                view_count=e.get("view_count", 0) or 0,
+                duration=e.get("duration", 0) or 0,
                 status=VideoStatus.waiting,
             )
             for i, e in enumerate(entries)
@@ -199,13 +207,20 @@ async def _run_collect_job(job: CollectJob) -> None:
 
 @router.post("/playlist-info")
 async def playlist_info(req: CollectRequest):
-    """Get video count from a URL without starting collection."""
+    """Get video list with view counts from a URL without starting collection."""
     try:
         entries = await get_video_entries(req.url)
         videos = [
-            {"video_id": e.get("id", ""), "title": e.get("title", "Untitled")}
+            {
+                "video_id": e.get("id", ""),
+                "title": e.get("title", "Untitled"),
+                "view_count": e.get("view_count", 0) or 0,
+                "duration": e.get("duration", 0) or 0,
+            }
             for e in (entries or [])
         ]
+        # Sort by view_count desc for preview
+        videos.sort(key=lambda v: v["view_count"], reverse=True)
         return {"count": len(videos), "videos": videos}
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -231,14 +246,14 @@ async def start_collection(req: CollectRequest):
 
     _running_projects.add(req.project_id)
 
-    async def _guarded_collect(j: CollectJob) -> None:
+    async def _guarded_collect(j: CollectJob, pct: int | None) -> None:
         try:
-            await _run_collect_job(j)
+            await _run_collect_job(j, top_percent=pct)
         finally:
             _running_projects.discard(j.project_id)
 
     # fire and forget
-    asyncio.create_task(_guarded_collect(job))
+    asyncio.create_task(_guarded_collect(job, req.top_percent))
 
     return {"job_id": job.job_id, "status": job.status}
 

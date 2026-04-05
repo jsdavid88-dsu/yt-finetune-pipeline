@@ -39,11 +39,14 @@ class SubtitleRoute(str, Enum):
 class CollectRequest(BaseModel):
     url: str
     project_id: str
+    top_percent: Optional[int] = None  # None=전체, 10=상위10%, 25=상위25% 등
 
 
 class VideoInfo(BaseModel):
     video_id: str
     title: str = ""
+    view_count: int = 0
+    duration: int = 0
     status: VideoStatus = VideoStatus.waiting
     route: Optional[SubtitleRoute] = None
     text: str = ""
