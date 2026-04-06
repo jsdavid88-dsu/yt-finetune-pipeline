@@ -21,3 +21,4 @@ backend/data/
 .DS_Store
 Thumbs.db
 .train-venv/
+unsloth_compiled_cache/
