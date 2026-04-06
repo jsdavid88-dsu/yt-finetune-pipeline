@@ -196,7 +196,8 @@ export async function trainStop(projectId: string): Promise<{ ok: boolean }> {
 
 // ── Generate ─────────────────────────────────────────────
 export async function generateGetModels(): Promise<GenerateModel[]> {
-  return request('/api/generate/models');
+  const data: any = await request('/api/generate/models');
+  return Array.isArray(data) ? data : (data?.models || []);
 }
 
 export function generateChatStream(
