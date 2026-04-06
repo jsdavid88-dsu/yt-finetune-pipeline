@@ -94,9 +94,9 @@ def detect_cuda_version() -> str | None:
     major, minor = int(m.group(1)), int(m.group(2))
 
     # PyTorch supported CUDA versions (as of 2026)
-    # Map to closest supported version (backward compatible)
+    # Map to closest supported version
     if major >= 13:
-        return "cu126"  # CUDA 13.x → use cu126 (backward compatible)
+        return "cu128"  # CUDA 13.x / RTX 50xx → need cu128 for sm_120
     elif major == 12:
         if minor >= 6:
             return "cu126"
