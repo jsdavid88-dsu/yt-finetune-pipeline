@@ -300,6 +300,17 @@ async def get_chunks(project_id: str):
     return {"chunks": chunks}
 
 
+@router.get("/outlines/{project_id}")
+async def get_outlines(project_id: str):
+    """Return episode outlines for a project."""
+    proj_dir = _project_dir(project_id)
+    outlines_path = proj_dir / "outlines.json"
+    if not outlines_path.exists():
+        return {"outlines": []}
+    with open(outlines_path, "r", encoding="utf-8") as f:
+        return {"outlines": json.load(f)}
+
+
 @router.get("/jsonl/{project_id}")
 async def get_jsonl(project_id: str):
     """Return generated JSONL for a project."""

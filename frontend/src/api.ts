@@ -139,6 +139,12 @@ export async function refineGetChunks(
   return request(`/api/refine/chunks/${projectId}`);
 }
 
+export async function refineGetOutlines(
+  projectId: string
+): Promise<{ outlines: any[] }> {
+  return request(`/api/refine/outlines/${projectId}`);
+}
+
 export async function refineGetJsonl(
   projectId: string
 ): Promise<{ jsonl: string; count: number }> {

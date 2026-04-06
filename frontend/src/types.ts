@@ -47,10 +47,39 @@ export interface ChunkTag {
   scene_type: string;
 }
 
+export interface ChunkAnalysis {
+  genre: string;
+  core_event: string;
+  characters: string[];
+  emotional_arc: string;
+  hook: string;
+  summary: string;
+  narrative_technique: string;
+  is_content: boolean;
+}
+
 export interface ChunkData {
   index: number;
   text: string;
+  corrected_text?: string;
   tags: ChunkTag | null;
+  analysis?: ChunkAnalysis | null;
+  episode?: string;
+}
+
+export interface OutlineScene {
+  index: number;
+  position: string;
+  core_event: string;
+  emotional_arc: string;
+  hook: string;
+  summary: string;
+}
+
+export interface EpisodeOutline {
+  episode: string;
+  genre: string;
+  scenes: OutlineScene[];
 }
 
 export interface RefineJobStatus {
