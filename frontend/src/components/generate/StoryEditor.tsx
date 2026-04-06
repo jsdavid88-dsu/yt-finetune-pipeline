@@ -95,7 +95,8 @@ export default function StoryEditor({ addLog }: Props) {
     fetch("/api/generate/models")
       .then((r) => r.json())
       .then((data) => {
-        const names = (data.models || []).map((m: any) => m.name || m.model) as string[];
+        const raw = Array.isArray(data?.models) ? data.models : [];
+        const names = raw.map((m: any) => m.name || m.model || '') .filter(Boolean) as string[];
         setModels(names);
         if (names.length > 0) {
           setState((s) => ({ ...s, model: s.model || names[0] }));

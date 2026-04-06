@@ -71,7 +71,7 @@ export default function StoryStructurePanel({
           className="w-full bg-gray-800 border border-gray-700 rounded px-2 py-1 text-xs text-gray-300"
           disabled={phase !== "input"}
         >
-          {models.map(m => <option key={m} value={m}>{m}</option>)}
+          {(Array.isArray(models) ? models : []).map(m => <option key={m} value={m}>{m}</option>)}
         </select>
         <div className="flex items-center gap-1">
           <span className="text-xs text-gray-500">\uC7A5\uBA74</span>
