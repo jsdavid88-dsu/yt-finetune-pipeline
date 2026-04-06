@@ -27,6 +27,7 @@ SETUP_TOTAL = 5
 
 # Unsloth dependencies to install individually (without touching torch)
 UNSLOTH_DEPS = [
+    "triton-windows; sys_platform == 'win32'",
     "bitsandbytes",
     "peft",
     "trl",
@@ -42,6 +43,7 @@ UNSLOTH_DEPS = [
     "psutil",
     "wheel",
     "packaging",
+    "cut_cross_entropy",
 ]
 
 

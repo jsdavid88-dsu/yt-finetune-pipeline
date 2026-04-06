@@ -94,9 +94,8 @@ def get_progress(project_id: str) -> dict:
                 # Clean up stale progress so UI shows idle
                 pass  # Keep showing status so user sees result
         return data
-    except (json.JSONDecodeError, IOError):
-        # Corrupted file — reset
-        progress_path.unlink(missing_ok=True)
+    except (json.JSONDecodeError, IOError, ValueError):
+        # Corrupted or empty file — return idle, don't delete (might be in use)
         return {"status": "idle", "progress": 0}
 
 
