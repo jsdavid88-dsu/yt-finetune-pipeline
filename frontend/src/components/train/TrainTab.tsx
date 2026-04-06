@@ -352,7 +352,9 @@ export default function TrainTab({ project, addLog }: Props) {
             losses={losses}
             currentEpoch={progress?.epoch ?? 0}
             totalEpochs={progress?.total_epochs ?? config.num_epochs}
-            elapsedTime=""
+            step={(progress as any)?.step ?? 0}
+            totalSteps={(progress as any)?.total_steps ?? 0}
+            detail={progress?.detail || ''}
             isTraining={isActive}
           />
         </div>
