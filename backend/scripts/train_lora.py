@@ -3,8 +3,12 @@ Usage: python train_lora.py --config path/to/config.json
 """
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
+
+# Pre-set Unsloth env vars before importing anything
+os.environ["UNSLOTH_CE_LOSS_TARGET_GB"] = "2"  # Allow 2GB for cross entropy loss
 
 
 def main():
