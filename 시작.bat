@@ -84,15 +84,15 @@ cd /d "%ROOT%backend"
 echo   OK
 
 echo [6/6] Starting server...
-start /B "" "%PYTHON%" main.py
-timeout /t 3 /nobreak >nul
-
 echo.
 echo  === StoryForge ready ===
 echo  http://127.0.0.1:8000
+echo  (close this window to stop)
 echo.
 start http://127.0.0.1:8000
-echo Press any key to stop server...
+"%PYTHON%" main.py
+echo.
+echo Server stopped. Press any key to close...
 pause >nul
 goto :eof
 
