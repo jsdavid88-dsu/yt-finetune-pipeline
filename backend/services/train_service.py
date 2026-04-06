@@ -86,9 +86,18 @@ def get_progress(project_id: str) -> dict:
     if not progress_path.exists():
         return {"status": "idle", "progress": 0}
     try:
-        return json.loads(progress_path.read_text(encoding="utf-8"))
+        data = json.loads(progress_path.read_text(encoding="utf-8"))
+        # If failed/completed and no active process, allow restart
+        if data.get("status") in ("failed", "completed"):
+            proc = _train_processes.get(project_id)
+            if proc is None or proc.poll() is not None:
+                # Clean up stale progress so UI shows idle
+                pass  # Keep showing status so user sees result
+        return data
     except (json.JSONDecodeError, IOError):
-        return {"status": "unknown", "progress": 0}
+        # Corrupted file — reset
+        progress_path.unlink(missing_ok=True)
+        return {"status": "idle", "progress": 0}
 
 
 def stop_training(project_id: str) -> dict:

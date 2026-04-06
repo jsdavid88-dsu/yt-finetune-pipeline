@@ -100,9 +100,9 @@ export default function TrainTab({ project, addLog }: Props) {
     trainStatus(project.id)
       .then((s) => {
         const ext = s as ExtendedTrainProgress;
-        if (ext.status !== 'idle') {
+        if (ext && ext.status && ext.status !== 'idle') {
           setProgress(ext);
-          if (ext.loss !== null) {
+          if (ext.loss !== null && ext.loss !== undefined) {
             setLosses((prev) => [...prev, ext.loss!]);
           }
           if (!['completed', 'failed', 'idle'].includes(ext.status as string)) {
