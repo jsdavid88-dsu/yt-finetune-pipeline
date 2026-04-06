@@ -165,7 +165,7 @@ def main():
         update_progress("training", 0, num_epochs)
 
         class ProgressCallback(TrainerCallback):
-            def on_epoch_end(self, _args, state, **kwargs):
+            def on_epoch_end(self, _args, state, control=None, **kwargs):
                 current_epoch = int(state.epoch)
                 current_loss = None
                 current_eval_loss = None
