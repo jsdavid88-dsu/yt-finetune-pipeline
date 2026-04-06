@@ -9,7 +9,7 @@ echo.
 set "ROOT=%~dp0"
 set "PYTHON="
 
-echo [1/5] Python...
+echo [1/6] Python...
 if exist "%ROOT%python-embedded\python.exe" (
     set "PYTHON=%ROOT%python-embedded\python.exe"
     echo   OK - embedded
@@ -22,20 +22,36 @@ if not defined PYTHON (
     )
 )
 if not defined PYTHON (
-    echo   ERROR - no python
-    pause
-    exit /b 1
+    echo   Python not found. Installing...
+    echo   Downloading Python 3.12...
+    powershell -Command "& { Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe' -OutFile '%TEMP%\python-installer.exe' }"
+    if not exist "%TEMP%\python-installer.exe" (
+        echo   ERROR - download failed
+        pause
+        exit /b 1
+    )
+    echo   Installing Python 3.12 (this may take a minute)...
+    "%TEMP%\python-installer.exe" /quiet InstallAllUsers=0 PrependPath=1 Include_pip=1 Include_venv=1
+    del "%TEMP%\python-installer.exe" 2>nul
+    where python >nul 2>&1
+    if errorlevel 1 (
+        echo   ERROR - install failed. Please install Python manually from https://python.org
+        pause
+        exit /b 1
+    )
+    set "PYTHON=python"
+    echo   OK - installed Python 3.12
 )
 
-echo [2/5] GPU...
+echo [2/6] GPU...
 nvidia-smi >nul 2>&1
 if errorlevel 1 (
-    echo   WARN - no GPU
+    echo   WARN - no NVIDIA GPU detected. Training will not be available.
 ) else (
-    echo   OK
+    for /f "tokens=*" %%a in ('nvidia-smi --query-gpu=name --format=csv,noheader 2^>nul') do echo   OK - %%a
 )
 
-echo [3/5] Ollama...
+echo [3/6] Ollama...
 where ollama >nul 2>&1
 if errorlevel 1 (
     echo   not found, installing...
@@ -46,7 +62,7 @@ if errorlevel 1 (
     )
     where ollama >nul 2>&1
     if errorlevel 1 (
-        echo   ERROR - install failed
+        echo   ERROR - install failed. Visit https://ollama.com
         pause
         exit /b 1
     )
@@ -56,7 +72,7 @@ if errorlevel 1 (
 )
 echo   OK
 
-echo [4/5] Ollama server...
+echo [4/6] Ollama server...
 tasklist /FI "IMAGENAME eq ollama.exe" 2>nul | findstr /I "ollama.exe" >nul 2>&1
 if errorlevel 1 (
     start /B "" ollama serve >nul 2>&1
@@ -67,16 +83,19 @@ if errorlevel 1 (
     echo   pulling gemma4...
     ollama pull gemma4
     if errorlevel 1 (
-        echo   ERROR - pull failed
+        echo   ERROR - model download failed
         pause
         exit /b 1
     )
 )
 echo   OK
 
-echo [5/5] Starting server...
+echo [5/6] Dependencies...
 cd /d "%ROOT%backend"
 "%PYTHON%" -m pip install -r requirements.txt -q 2>nul
+echo   OK
+
+echo [6/6] Starting server...
 start /B "" "%PYTHON%" main.py
 timeout /t 3 /nobreak >nul
 
