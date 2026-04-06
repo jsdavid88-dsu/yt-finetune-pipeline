@@ -23,32 +23,20 @@ if not defined PYTHON (
 )
 if not defined PYTHON (
     echo   Python not found. Installing...
-    echo   Downloading Python 3.12...
-    powershell -Command "& { Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe' -OutFile '%TEMP%\python-installer.exe' }"
-    if not exist "%TEMP%\python-installer.exe" (
-        echo   ERROR - download failed
+    call :install_python
+    if not defined PYTHON (
+        echo   ERROR - install failed. Get it from https://python.org
         pause
         exit /b 1
     )
-    echo   Installing Python 3.12 (this may take a minute)...
-    "%TEMP%\python-installer.exe" /quiet InstallAllUsers=0 PrependPath=1 Include_pip=1 Include_venv=1
-    del "%TEMP%\python-installer.exe" 2>nul
-    where python >nul 2>&1
-    if errorlevel 1 (
-        echo   ERROR - install failed. Please install Python manually from https://python.org
-        pause
-        exit /b 1
-    )
-    set "PYTHON=python"
-    echo   OK - installed Python 3.12
 )
 
 echo [2/6] GPU...
 nvidia-smi >nul 2>&1
 if errorlevel 1 (
-    echo   WARN - no NVIDIA GPU detected. Training will not be available.
+    echo   WARN - no NVIDIA GPU
 ) else (
-    for /f "tokens=*" %%a in ('nvidia-smi --query-gpu=name --format=csv,noheader 2^>nul') do echo   OK - %%a
+    echo   OK
 )
 
 echo [3/6] Ollama...
@@ -106,3 +94,19 @@ echo.
 start http://127.0.0.1:8000
 echo Press any key to stop server...
 pause >nul
+goto :eof
+
+
+:install_python
+echo   Downloading Python 3.12...
+powershell -Command "Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe' -OutFile '%TEMP%\python-install.exe'"
+if not exist "%TEMP%\python-install.exe" goto :eof
+echo   Installing...
+"%TEMP%\python-install.exe" /quiet InstallAllUsers=0 PrependPath=1 Include_pip=1
+del "%TEMP%\python-install.exe" 2>nul
+where python >nul 2>&1
+if not errorlevel 1 (
+    set "PYTHON=python"
+    echo   OK - installed
+)
+goto :eof
