@@ -75,8 +75,9 @@ def _fail(progress_file: Path, msg: str) -> None:
 # ---------------------------------------------------------------------------
 
 def detect_cuda_version() -> str | None:
-    """Run ``nvidia-smi`` and parse ``CUDA Version: X.Y`` into e.g. ``cu126``.
+    """Run ``nvidia-smi`` and parse ``CUDA Version: X.Y`` into a PyTorch-compatible tag.
 
+    Maps to the closest supported PyTorch CUDA version.
     Returns None when CUDA is not available.
     """
     try:
@@ -86,13 +87,27 @@ def detect_cuda_version() -> str | None:
     except (FileNotFoundError, subprocess.CalledProcessError):
         return None
 
-    # Example line: "CUDA Version: 12.6"
     m = re.search(r"CUDA Version:\s*(\d+)\.(\d+)", output)
     if not m:
         return None
 
-    major, minor = m.group(1), m.group(2)
-    return f"cu{major}{minor}"
+    major, minor = int(m.group(1)), int(m.group(2))
+
+    # PyTorch supported CUDA versions (as of 2026)
+    # Map to closest supported version (backward compatible)
+    if major >= 13:
+        return "cu126"  # CUDA 13.x → use cu126 (backward compatible)
+    elif major == 12:
+        if minor >= 6:
+            return "cu126"
+        elif minor >= 4:
+            return "cu124"
+        else:
+            return "cu121"
+    elif major == 11:
+        return "cu118"
+    else:
+        return None
 
 
 # ---------------------------------------------------------------------------
