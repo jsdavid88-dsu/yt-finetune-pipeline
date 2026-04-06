@@ -8,7 +8,6 @@ venv/
 
 # Node
 node_modules/
-frontend/dist/
 
 # Data
 backend/data/
