@@ -98,11 +98,23 @@ export default function TrainTab({ project, addLog }: Props) {
     if (!project) return;
     // Check if there's already an active training for this project
     trainStatus(project.id)
-      .then((s) => {
-        const ext = s as ExtendedTrainProgress;
-        if (ext && ext.status && ext.status !== 'idle') {
+      .then((raw: any) => {
+        if (!raw || !raw.status || raw.status === 'idle') return;
+        const ext: ExtendedTrainProgress = {
+          status: raw.status,
+          progress: raw.progress || 0,
+          epoch: raw.epoch || 0,
+          total_epochs: raw.total_epochs || 0,
+          loss: typeof raw.loss === 'number' ? raw.loss : null,
+          error: raw.error || null,
+          detail: raw.detail,
+          setup_step: raw.setup_step,
+          setup_total: raw.setup_total,
+          eval_loss: typeof raw.eval_loss === 'number' ? raw.eval_loss : null,
+        };
+        if (ext.status !== 'idle') {
           setProgress(ext);
-          if (ext.loss !== null && ext.loss !== undefined) {
+          if (ext.loss !== null && typeof ext.loss === 'number') {
             setLosses((prev) => [...prev, ext.loss!]);
           }
           if (!['completed', 'failed', 'idle'].includes(ext.status as string)) {
@@ -118,9 +130,21 @@ export default function TrainTab({ project, addLog }: Props) {
     pollRef.current = setInterval(async () => {
       if (!project) return;
       try {
-        const s = (await trainStatus(project.id)) as ExtendedTrainProgress;
+        const raw: any = await trainStatus(project.id);
+        const s: ExtendedTrainProgress = {
+          status: raw?.status || 'idle',
+          progress: raw?.progress || 0,
+          epoch: raw?.epoch || 0,
+          total_epochs: raw?.total_epochs || 0,
+          loss: typeof raw?.loss === 'number' ? raw.loss : null,
+          error: raw?.error || null,
+          detail: raw?.detail,
+          setup_step: raw?.setup_step,
+          setup_total: raw?.setup_total,
+          eval_loss: typeof raw?.eval_loss === 'number' ? raw.eval_loss : null,
+        };
         setProgress(s);
-        if (s.loss !== null) {
+        if (s.loss !== null && typeof s.loss === 'number') {
           setLosses((prev) => [...prev, s.loss!]);
         }
         if (s.status === 'completed') {
@@ -271,12 +295,12 @@ export default function TrainTab({ project, addLog }: Props) {
             />
           </div>
           <div className="flex gap-4 text-xs text-gray-500">
-            {progress.loss !== null && (
+            {progress.loss != null && typeof progress.loss === 'number' && (
               <span>
                 Loss: <span className="font-mono text-blue-400">{progress.loss.toFixed(4)}</span>
               </span>
             )}
-            {progress.eval_loss != null && (
+            {progress.eval_loss != null && typeof progress.eval_loss === 'number' && (
               <span>
                 Eval Loss: <span className="font-mono text-cyan-400">{progress.eval_loss.toFixed(4)}</span>
               </span>
