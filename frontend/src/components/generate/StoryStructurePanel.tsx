@@ -1,4 +1,4 @@
-import { Download, Eye, Settings } from "lucide-react";
+import { Download, Eye, Settings, RotateCcw, ArrowLeft } from "lucide-react";
 
 interface SceneData {
   num: number;
@@ -13,6 +13,8 @@ interface Props {
   selectedScene: number | null;
   onSelectScene: (num: number | null) => void;
   onExport: () => void;
+  onReset: () => void;
+  onBackToOutline: () => void;
   model: string;
   models: string[];
   onModelChange: (m: string) => void;
@@ -36,7 +38,7 @@ const PHASE_LABELS = [
 
 export default function StoryStructurePanel({
   phase, scenes, selectedScene, onSelectScene,
-  onExport, model, models, onModelChange,
+  onExport, onReset, onBackToOutline, model, models, onModelChange,
   numScenes, onNumScenesChange,
 }: Props) {
   return (
@@ -63,7 +65,7 @@ export default function StoryStructurePanel({
       {/* Settings */}
       <div className="p-3 border-b border-gray-700 space-y-2">
         <div className="text-xs text-gray-500 flex items-center gap-1">
-          <Settings size={10} /> \uC124\uC815
+          <Settings size={10} /> 설정
         </div>
         <select
           value={model}
@@ -74,7 +76,7 @@ export default function StoryStructurePanel({
           {(Array.isArray(models) ? models : []).map(m => <option key={m} value={m}>{m}</option>)}
         </select>
         <div className="flex items-center gap-1">
-          <span className="text-xs text-gray-500">\uC7A5\uBA74</span>
+          <span className="text-xs text-gray-500">장면</span>
           <input
             type="number" min={4} max={20}
             value={numScenes}
@@ -94,7 +96,7 @@ export default function StoryStructurePanel({
               selectedScene === null ? "bg-gray-700 text-white" : "text-gray-400 hover:bg-gray-800"
             }`}
           >
-            <Eye size={10} /> \uC804\uCCB4 \uBCF4\uAE30
+            <Eye size={10} /> 전체 보기
           </button>
           {scenes.map((s) => (
             <button
@@ -110,14 +112,29 @@ export default function StoryStructurePanel({
         </div>
       )}
 
-      {/* Spacer when no scenes */}
       {scenes.length === 0 && <div className="flex-1" />}
 
       {/* Actions */}
-      <div className="p-3 border-t border-gray-700">
+      <div className="p-3 border-t border-gray-700 space-y-1.5">
+        {(phase === "generating" || phase === "review") && (
+          <button
+            onClick={onBackToOutline}
+            className="w-full bg-gray-800 hover:bg-gray-700 text-gray-300 rounded px-3 py-1.5 text-xs flex items-center justify-center gap-1"
+          >
+            <ArrowLeft size={12} /> 아웃라인으로
+          </button>
+        )}
         {phase === "review" && (
           <button onClick={onExport} className="w-full bg-gray-700 hover:bg-gray-600 text-gray-200 rounded px-3 py-1.5 text-xs flex items-center justify-center gap-1">
-            <Download size={12} /> \uB0B4\uBCF4\uB0B4\uAE30
+            <Download size={12} /> 내보내기
+          </button>
+        )}
+        {phase !== "input" && (
+          <button
+            onClick={onReset}
+            className="w-full bg-gray-800 hover:bg-red-900/30 text-gray-500 hover:text-red-400 rounded px-3 py-1.5 text-xs flex items-center justify-center gap-1"
+          >
+            <RotateCcw size={12} /> 처음부터
           </button>
         )}
       </div>

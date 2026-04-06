@@ -133,6 +133,7 @@ export default function StoryEditor({ addLog }: Props) {
           topic: state.topic.trim(),
           num_scenes: state.numScenes,
           temperature: 0.7,
+          max_tokens: 4096,
         }),
       });
       const data = await resp.json();
@@ -445,6 +446,24 @@ export default function StoryEditor({ addLog }: Props) {
     updateScene(num, { text, status: "modified" });
   }, [updateScene]);
 
+  // ── Reset / Back ──
+
+  const resetAll = useCallback(() => {
+    if (abortRef.current) abortRef.current.abort();
+    setState({ ...initialState, model: state.model });
+    setGeneratingSceneNum(null);
+    setGeneratingSceneText("");
+    setChatStreaming(false);
+    setChatStreamContent("");
+  }, [state.model]);
+
+  const backToOutline = useCallback(() => {
+    if (abortRef.current) abortRef.current.abort();
+    setGeneratingSceneNum(null);
+    setGeneratingSceneText("");
+    update({ phase: "outline" });
+  }, [update]);
+
   // ── Export ──
 
   const exportScript = useCallback(() => {
@@ -473,6 +492,8 @@ export default function StoryEditor({ addLog }: Props) {
         selectedScene={state.selectedScene}
         onSelectScene={(num) => update({ selectedScene: num })}
         onExport={exportScript}
+        onReset={resetAll}
+        onBackToOutline={backToOutline}
         model={state.model}
         models={models}
         onModelChange={(m) => update({ model: m })}
