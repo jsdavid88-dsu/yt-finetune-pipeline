@@ -25,26 +25,8 @@ DEFAULT_VENV_DIR = _BACKEND_DIR / ".train-venv"
 
 SETUP_TOTAL = 5
 
-# Unsloth dependencies to install individually (without touching torch)
-UNSLOTH_DEPS = [
-    "triton-windows; sys_platform == 'win32'",
-    "bitsandbytes",
-    "peft",
-    "trl",
-    "datasets",
-    "transformers",
-    "accelerate",
-    "xformers",
-    "sentencepiece",
-    "protobuf",
-    "huggingface_hub",
-    "hf_transfer",
-    "tyro",
-    "psutil",
-    "wheel",
-    "packaging",
-    "cut_cross_entropy",
-]
+# No longer needed — `pip install unsloth` pulls all deps automatically.
+# We then force-reinstall CUDA torch to override the CPU version.
 
 
 # ---------------------------------------------------------------------------
@@ -233,27 +215,21 @@ def setup(project_dir: Path, venv_dir: Path) -> Path:
                     setup_step=2)
 
     # ------------------------------------------------------------------
-    # Step 3: Install CUDA PyTorch FIRST (prevent CPU torch override)
+    # Step 3: Install Unsloth (lets pip resolve all dependencies)
+    # ------------------------------------------------------------------
+    _write_progress(progress_file, "setup", "Installing Unsloth + dependencies...",
+                    setup_step=3)
+    _run_pip(venv_python, ["unsloth"], progress_file, 3, "Unsloth")
+
+    # ------------------------------------------------------------------
+    # Step 4: Force-reinstall CUDA PyTorch (override CPU torch from unsloth)
     # ------------------------------------------------------------------
     index_url = f"https://download.pytorch.org/whl/{cuda_ver}"
     _write_progress(progress_file, "setup",
-                    f"Installing PyTorch (CUDA {cuda_ver})...", setup_step=3)
-    _run_pip(venv_python, ["torch", "torchvision", "--index-url", index_url],
-             progress_file, 3, "PyTorch")
-
-    # ------------------------------------------------------------------
-    # Step 4: Install Unsloth WITHOUT touching torch
-    # ------------------------------------------------------------------
-    _write_progress(progress_file, "setup", "Installing Unsloth (no-deps)...",
-                    setup_step=4)
-    _run_pip(venv_python, ["--no-deps", "unsloth", "unsloth_zoo"],
-             progress_file, 4, "Unsloth core")
-
-    # Install remaining deps individually
-    for dep in UNSLOTH_DEPS:
-        _write_progress(progress_file, "setup", f"Installing {dep}...",
-                        setup_step=4)
-        _run_pip(venv_python, [dep], progress_file, 4, dep)
+                    f"Installing CUDA PyTorch ({cuda_ver})...", setup_step=4)
+    _run_pip(venv_python, ["--force-reinstall", "torch", "torchvision",
+                           "--index-url", index_url],
+             progress_file, 4, "PyTorch CUDA")
 
     # ------------------------------------------------------------------
     # Step 5: Validate
