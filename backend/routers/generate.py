@@ -15,13 +15,14 @@ from models.schemas import (
     ExportRequest,
     PromptTemplate,
     SceneRegenerateRequest,
+    StoryChatRequest,
     StoryGenerateRequest,
     StoryOutlineRequest,
 )
 from services.ollama import generate as ollama_generate
 from services.ollama import generate_stream as ollama_stream
 from services.ollama import list_models as ollama_list_models
-from services.story_service import generate_outline, generate_scenes, regenerate_scene
+from services.story_service import chat_with_context, generate_outline, generate_scenes, regenerate_scene
 
 router = APIRouter(prefix="/api/generate", tags=["generate"])
 
@@ -256,3 +257,33 @@ async def story_regenerate_scene(req: SceneRegenerateRequest):
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Ollama error: {exc}")
     return {"scene_text": scene_text}
+
+
+@router.post("/story/chat")
+async def story_chat(req: StoryChatRequest):
+    """Context-aware story chat. SSE streaming with suggestion parsing."""
+    async def event_generator():
+        try:
+            async for event in chat_with_context(
+                model=req.model,
+                message=req.message,
+                history=req.history,
+                context=req.context,
+                temperature=req.temperature,
+            ):
+                data = json.dumps(event, ensure_ascii=False)
+                yield f"data: {data}\n\n"
+            yield "data: [DONE]\n\n"
+        except Exception as exc:
+            error_data = json.dumps({"type": "error", "error": str(exc)})
+            yield f"data: {error_data}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

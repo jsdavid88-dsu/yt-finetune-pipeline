@@ -10,6 +10,7 @@ import json
 import re
 from typing import AsyncIterator
 
+from services.ollama import chat as ollama_chat
 from services.ollama import generate as ollama_generate
 
 
@@ -172,6 +173,112 @@ async def regenerate_scene(
         max_tokens=max_tokens,
     )
     return result or ""
+
+
+# ---------------------------------------------------------------------------
+# Context-aware chat
+# ---------------------------------------------------------------------------
+
+def _build_system_prompt(context) -> str:
+    """Build a system prompt from StoryChatContext."""
+    parts: list[str] = []
+
+    if context.genre:
+        parts.append(f"장르: {context.genre}")
+    if context.topic:
+        parts.append(f"주제: {context.topic}")
+
+    parts.append(f"현재 Phase: {context.phase}")
+
+    if context.outline:
+        parts.append(f"\n[아웃라인]\n{context.outline}")
+
+    if context.selected_scene is not None:
+        parts.append(f"\n현재 선택된 장면: {context.selected_scene}번")
+
+    if context.selected_text:
+        parts.append(f"\n[선택된 장면 텍스트]\n{context.selected_text}")
+
+    parts.append(
+        "\n\n당신은 스토리 편집 어시스턴트입니다. "
+        "사용자의 요청에 따라 아웃라인이나 장면을 분석하고 수정 제안을 합니다.\n"
+        "수정이 필요하면 수정된 텍스트를 ```suggestion 블록으로 감싸서 출력하세요.\n"
+        "예시:\n```suggestion\n수정된 내용\n```"
+    )
+
+    return "\n".join(parts)
+
+
+def _parse_suggestions(full_content: str, context) -> list[dict]:
+    """Parse ```suggestion blocks from the model response."""
+    suggestions: list[dict] = []
+    pattern = re.compile(r"```suggestion\s*\n(.*?)```", re.DOTALL)
+    for m in pattern.finditer(full_content):
+        text = m.group(1).strip()
+
+        # Determine target: if a scene is selected → scene, else → outline
+        if context.selected_scene is not None:
+            target = "scene"
+            scene_num = context.selected_scene
+        else:
+            target = "outline"
+            scene_num = None
+
+        suggestions.append({
+            "text": text,
+            "target": target,
+            "scene_num": scene_num,
+        })
+
+    return suggestions
+
+
+async def chat_with_context(
+    model: str,
+    message: str,
+    history: list[dict[str, str]],
+    context,
+    temperature: float = 0.7,
+) -> AsyncIterator[dict]:
+    """Context-aware chat with streaming and suggestion parsing.
+
+    Yields SSE-friendly dicts:
+      {"type": "token", "content": "..."}
+      {"type": "done", "full_content": "..."}
+      {"type": "suggestion", "text": "...", "target": "...", "scene_num": N}
+    """
+    system_prompt = _build_system_prompt(context)
+
+    messages: list[dict[str, str]] = [
+        {"role": "system", "content": system_prompt},
+    ]
+    messages.extend(history)
+    messages.append({"role": "user", "content": message})
+
+    # Use Ollama chat API with streaming
+    token_iter = await ollama_chat(
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        stream=True,
+    )
+
+    full_content = ""
+    async for token in token_iter:
+        full_content += token
+        yield {"type": "token", "content": token}
+
+    yield {"type": "done", "full_content": full_content}
+
+    # Parse suggestion blocks and emit them
+    suggestions = _parse_suggestions(full_content, context)
+    for suggestion in suggestions:
+        yield {
+            "type": "suggestion",
+            "text": suggestion["text"],
+            "target": suggestion["target"],
+            "scene_num": suggestion["scene_num"],
+        }
 
 
 # ---------------------------------------------------------------------------

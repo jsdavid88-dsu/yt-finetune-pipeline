@@ -5,7 +5,7 @@ import { generateGetModels, generateExport, getTemplates, saveTemplate, deleteTe
 import ChatInterface from './ChatInterface';
 import TemplateManager from './TemplateManager';
 import BatchGenerate from './BatchGenerate';
-import StoryGenerator from './StoryGenerator';
+import StoryEditor from './StoryEditor';
 
 interface Props {
   project: Project | null;
@@ -180,8 +180,8 @@ export default function GenerateTab({ project, addLog }: Props) {
       </div>
 
       {mode === 'story' ? (
-        <div className="flex-1 min-h-0 overflow-y-auto">
-          <StoryGenerator addLog={addLog} />
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <StoryEditor addLog={addLog} />
         </div>
       ) : (
         <div className="flex-1 grid grid-cols-4 gap-4 min-h-0">

@@ -285,6 +285,23 @@ class SceneRegenerateRequest(BaseModel):
     max_tokens: int = 2048
 
 
+class StoryChatContext(BaseModel):
+    phase: str                             # "outline" | "generating" | "review"
+    outline: str = ""
+    selected_scene: Optional[int] = None
+    selected_text: Optional[str] = None
+    genre: str = ""
+    topic: str = ""
+
+
+class StoryChatRequest(BaseModel):
+    model: str
+    message: str
+    history: list[dict[str, str]] = []
+    context: StoryChatContext
+    temperature: float = 0.7
+
+
 class PromptTemplate(BaseModel):
     id: str = Field(default_factory=lambda: uuid.uuid4().hex[:8])
     name: str
