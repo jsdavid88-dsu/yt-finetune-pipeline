@@ -62,8 +62,12 @@ export default function VideoList({ videos, selectedId, onSelect }: Props) {
               `}
             >
               <div className="flex-1 min-w-0">
-                <div className="text-sm text-gray-200 truncate">{video.title}</div>
-                <div className="text-xs text-gray-500 truncate mt-0.5">{video.url}</div>
+                <div className={`text-sm truncate ${video.status === 'error' ? 'text-red-300' : 'text-gray-200'}`}>{video.title}</div>
+                {video.error ? (
+                  <div className="text-xs text-red-400 truncate mt-0.5">{video.error}</div>
+                ) : (
+                  <div className="text-xs text-gray-500 truncate mt-0.5">{video.url}</div>
+                )}
               </div>
               <span className={status.class}>
                 <StatusIcon

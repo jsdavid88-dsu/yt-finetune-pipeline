@@ -2,15 +2,24 @@
 from __future__ import annotations
 
 import json
+import platform
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any
 
-_SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
-_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-_VENV_PYTHON = Path(__file__).resolve().parent.parent / ".train-venv" / "Scripts" / "python.exe"
+_BACKEND_DIR = Path(__file__).resolve().parent.parent
+_SCRIPTS_DIR = _BACKEND_DIR / "scripts"
+_DATA_DIR = _BACKEND_DIR / "data"
+_VENV_DIR = _BACKEND_DIR / ".train-venv"
 _train_processes: dict[str, subprocess.Popen] = {}
+
+
+def _get_venv_python() -> Path:
+    """Return venv python path for current OS."""
+    if platform.system() == "Windows":
+        return _VENV_DIR / "Scripts" / "python.exe"
+    return _VENV_DIR / "bin" / "python"
 
 
 def check_gpu() -> dict:
@@ -30,7 +39,7 @@ def check_gpu() -> dict:
 
 
 def start_training(project_id: str, config: dict[str, Any]) -> dict:
-    """Launch training subprocess for the given project."""
+    """Launch training: setup env (if needed) → train."""
     if project_id in _train_processes:
         proc = _train_processes[project_id]
         if proc.poll() is None:
@@ -45,19 +54,26 @@ def start_training(project_id: str, config: dict[str, Any]) -> dict:
     config_path.write_text(json.dumps(config, ensure_ascii=False), encoding="utf-8")
 
     (project_dir / "train_progress.json").write_text(
-        json.dumps({"status": "starting", "progress": 0}), encoding="utf-8"
+        json.dumps({"status": "starting", "progress": 0, "detail": "환경 확인 중..."}),
+        encoding="utf-8",
     )
 
-    # Use training venv python if available, else system python
-    train_python = str(_VENV_PYTHON) if _VENV_PYTHON.exists() else sys.executable
+    # Determine python to use: venv if exists, else system (setup will create venv)
+    venv_python = _get_venv_python()
+    if venv_python.exists():
+        train_python = str(venv_python)
+    else:
+        train_python = sys.executable
 
+    # Launch: setup_train_env first, then train_lora
+    # We use a wrapper approach: run setup, then exec train
     proc = subprocess.Popen(
         [
             train_python,
-            "-u",  # unbuffered output
-            str(_SCRIPTS_DIR / "train_lora.py"),
-            "--config",
-            str(config_path),
+            "-u",
+            str(_SCRIPTS_DIR / "train_wrapper.py"),
+            "--config", str(config_path),
+            "--venv-dir", str(_VENV_DIR),
         ],
     )
     _train_processes[project_id] = proc

@@ -21,21 +21,30 @@ import ModelSelect from './ModelSelect';
 import TrainConfigForm from './TrainConfig';
 import LossChart from './LossChart';
 
+/** Extended progress with fields that may come from progress.json but aren't in the base type yet */
+interface ExtendedTrainProgress extends TrainProgress {
+  detail?: string;
+  setup_step?: number;
+  setup_total?: number;
+  eval_loss?: number | null;
+}
+
 interface Props {
   project: Project | null;
   addLog: (level: 'info' | 'warn' | 'error' | 'success', msg: string) => void;
 }
 
 const STATUS_LABELS: Record<string, string> = {
-  idle: '대기 중',
-  starting: '학습 준비 중...',
-  installing: '패키지 설치 중...',
-  loading_model: '모델 로딩 중...',
-  training: '학습 진행 중...',
-  converting: 'GGUF 변환 중...',
-  registering: 'Ollama에 모델 등록 중...',
-  completed: '학습 완료! 모델이 Ollama에 등록되었습니다.',
-  failed: '학습 실패',
+  idle: 'Idle',
+  starting: 'Preparing training environment...',
+  setup: 'Setting up dependencies...',
+  installing: 'Setting up dependencies...',
+  loading_model: 'Downloading model...',
+  training: 'Training in progress...',
+  converting: 'Converting to GGUF format...',
+  registering: 'Registering model with Ollama...',
+  completed: 'Training complete! Model registered in Ollama.',
+  failed: 'Training failed',
 };
 
 const defaultConfig: TrainConfig = {
@@ -52,13 +61,13 @@ export default function TrainTab({ project, addLog }: Props) {
   const [models, setModels] = useState<TrainModel[]>([]);
   const [selectedModel, setSelectedModel] = useState('');
   const [config, setConfig] = useState<TrainConfig>(defaultConfig);
-  const [progress, setProgress] = useState<TrainProgress | null>(null);
+  const [progress, setProgress] = useState<ExtendedTrainProgress | null>(null);
   const [losses, setLosses] = useState<number[]>([]);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isActive =
     progress !== null &&
-    !['idle', 'completed', 'failed'].includes(progress.status);
+    !['idle', 'completed', 'failed'].includes(progress.status as string);
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -90,12 +99,13 @@ export default function TrainTab({ project, addLog }: Props) {
     // Check if there's already an active training for this project
     trainStatus(project.id)
       .then((s) => {
-        if (s.status !== 'idle') {
-          setProgress(s);
-          if (s.loss !== null) {
-            setLosses((prev) => [...prev, s.loss!]);
+        const ext = s as ExtendedTrainProgress;
+        if (ext.status !== 'idle') {
+          setProgress(ext);
+          if (ext.loss !== null) {
+            setLosses((prev) => [...prev, ext.loss!]);
           }
-          if (!['completed', 'failed', 'idle'].includes(s.status)) {
+          if (!['completed', 'failed', 'idle'].includes(ext.status as string)) {
             startPolling();
           }
         }
@@ -108,17 +118,17 @@ export default function TrainTab({ project, addLog }: Props) {
     pollRef.current = setInterval(async () => {
       if (!project) return;
       try {
-        const s = await trainStatus(project.id);
+        const s = (await trainStatus(project.id)) as ExtendedTrainProgress;
         setProgress(s);
         if (s.loss !== null) {
           setLosses((prev) => [...prev, s.loss!]);
         }
         if (s.status === 'completed') {
           if (pollRef.current) clearInterval(pollRef.current);
-          addLog('success', '학습 완료! 모델이 Ollama에 등록되었습니다.');
+          addLog('success', 'Training complete! Model registered in Ollama.');
         } else if (s.status === 'failed') {
           if (pollRef.current) clearInterval(pollRef.current);
-          addLog('error', `학습 실패: ${s.error || '알 수 없는 오류'}`);
+          addLog('error', `Training failed: ${s.error || 'Unknown error'}`);
         }
       } catch {
         // continue polling
@@ -213,16 +223,37 @@ export default function TrainTab({ project, addLog }: Props) {
           ) : (
             <Loader2 size={14} className="animate-spin" />
           )}
-          <span className="flex-1">{STATUS_LABELS[progress.status] || progress.status}</span>
+          <span className="flex-1">
+            {STATUS_LABELS[progress.status as string] || progress.status}
+            {progress.detail && (
+              <span className="ml-2 text-xs opacity-80">— {progress.detail}</span>
+            )}
+          </span>
           {progress.status === 'failed' && progress.error && (
             <span className="text-xs text-red-300 ml-2">{progress.error}</span>
           )}
           {progress.status === 'failed' && (
             <button onClick={handleRetry} className="ml-2 text-xs flex items-center gap-1 hover:text-red-300 transition-colors">
               <RefreshCw size={12} />
-              다시 시도
+              Retry
             </button>
           )}
+        </div>
+      )}
+
+      {/* Progress Bar for setup phase */}
+      {progress && ((progress.status as string) === 'setup' || progress.status === 'installing') && progress.setup_step != null && progress.setup_total != null && (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-xs text-gray-400">
+            <span>Setup step {progress.setup_step}/{progress.setup_total}</span>
+            <span>{Math.round((progress.setup_step / progress.setup_total) * 100)}%</span>
+          </div>
+          <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-purple-500 rounded-full transition-all duration-500"
+              style={{ width: `${Math.round((progress.setup_step / progress.setup_total) * 100)}%` }}
+            />
+          </div>
         </div>
       )}
 
@@ -230,7 +261,7 @@ export default function TrainTab({ project, addLog }: Props) {
       {progress && progress.status === 'training' && (
         <div className="space-y-1">
           <div className="flex items-center justify-between text-xs text-gray-400">
-            <span>에포크 {progress.epoch}/{progress.total_epochs}</span>
+            <span>Epoch {progress.epoch}/{progress.total_epochs}</span>
             <span>{progressPercent}%</span>
           </div>
           <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
@@ -239,11 +270,18 @@ export default function TrainTab({ project, addLog }: Props) {
               style={{ width: `${progressPercent}%` }}
             />
           </div>
-          {progress.loss !== null && (
-            <div className="text-xs text-gray-500">
-              현재 Loss: <span className="font-mono text-blue-400">{progress.loss.toFixed(4)}</span>
-            </div>
-          )}
+          <div className="flex gap-4 text-xs text-gray-500">
+            {progress.loss !== null && (
+              <span>
+                Loss: <span className="font-mono text-blue-400">{progress.loss.toFixed(4)}</span>
+              </span>
+            )}
+            {progress.eval_loss != null && (
+              <span>
+                Eval Loss: <span className="font-mono text-cyan-400">{progress.eval_loss.toFixed(4)}</span>
+              </span>
+            )}
+          </div>
         </div>
       )}
 

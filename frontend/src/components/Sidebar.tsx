@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FolderPlus, Folder, Loader2 } from 'lucide-react';
+import { FolderPlus, Folder, Loader2, Trash2 } from 'lucide-react';
 import type { Project, ProjectPreset } from '../types';
 import { getProjects, createProject, getPresets } from '../api';
 
@@ -165,11 +165,10 @@ export default function Sidebar({ selectedProject, onSelectProject, addLog }: Pr
           </p>
         ) : (
           projects.map((p) => (
-            <button
+            <div
               key={p.id}
-              onClick={() => onSelectProject(p)}
               className={`
-                w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors
+                w-full flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors group
                 ${
                   selectedProject?.id === p.id
                     ? 'bg-blue-600/20 text-blue-400 border-r-2 border-blue-500'
@@ -177,16 +176,36 @@ export default function Sidebar({ selectedProject, onSelectProject, addLog }: Pr
                 }
               `}
             >
-              <Folder size={14} />
-              <div className="min-w-0 flex-1">
-                <div className="truncate">{p.name}</div>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded ${presetBadgeColor(p.preset)}`}>
-                    {p.preset}
-                  </span>
+              <button onClick={() => onSelectProject(p)} className="flex items-center gap-2 min-w-0 flex-1">
+                <Folder size={14} />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate">{p.name}</div>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded ${presetBadgeColor(p.preset)}`}>
+                      {p.preset}
+                    </span>
+                  </div>
                 </div>
-              </div>
-            </button>
+              </button>
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  if (!confirm(`"${p.name}" 프로젝트를 삭제하시겠습니까? 모든 데이터가 삭제됩니다.`)) return;
+                  try {
+                    await fetch(`/api/collect/projects/${p.id}`, { method: 'DELETE' });
+                    setProjects((prev) => prev.filter((x) => x.id !== p.id));
+                    if (selectedProject?.id === p.id) onSelectProject(null as any);
+                    addLog('success', `"${p.name}" 삭제 완료`);
+                  } catch {
+                    addLog('error', '삭제 실패');
+                  }
+                }}
+                className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-900/50 text-gray-500 hover:text-red-400 transition-all"
+                title="프로젝트 삭제"
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
           ))
         )}
       </div>
