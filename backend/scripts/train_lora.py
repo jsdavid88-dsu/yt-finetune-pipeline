@@ -54,16 +54,57 @@ def main():
             json.dumps(progress, ensure_ascii=False), encoding="utf-8"
         )
 
+    # Map bnb-4bit model names to FP16 counterparts for merge step
+    bnb4_to_fp16 = {
+        "unsloth/gemma-4-E4B-it-unsloth-bnb-4bit": "google/gemma-4-E4B-it",
+        "unsloth/gemma-4-12B-it-unsloth-bnb-4bit": "google/gemma-4-12B-it",
+        "unsloth/gemma-4-27B-it-unsloth-bnb-4bit": "google/gemma-4-27B-it",
+        "unsloth/gemma-4-31B-it-unsloth-bnb-4bit": "google/gemma-4-31B-it",
+    }
+
     try:
         # Import (should work since setup_train_env prepared the venv)
         update_progress("loading_model", detail="Unsloth 로딩 중...")
         from unsloth import FastLanguageModel
+
+        # Pre-cache FP16 base model for GGUF conversion later
+        # Without this, save_pretrained_gguf can't merge 4bit → 16bit
+        BNB4_TO_FP16 = {
+            "unsloth/gemma-4-E4B-it-unsloth-bnb-4bit": "google/gemma-4-E4B-it",
+            "unsloth/gemma-4-12B-it-unsloth-bnb-4bit": "google/gemma-4-12B-it",
+            "unsloth/gemma-4-27B-it-unsloth-bnb-4bit": "google/gemma-4-27B-it",
+            "unsloth/gemma-4-31B-it-unsloth-bnb-4bit": "google/gemma-4-31B-it",
+        }
+        fp16_name = BNB4_TO_FP16.get(base_model)
+        if fp16_name:
+            update_progress("loading_model", detail=f"FP16 베이스 모델 캐싱 중: {fp16_name}...")
+            try:
+                from huggingface_hub import snapshot_download
+                snapshot_download(fp16_name, ignore_patterns=["*.gguf", "*.bin"])
+            except Exception as cache_err:
+                print(f"FP16 pre-cache warning: {cache_err}")
         from datasets import load_dataset
         from trl import SFTTrainer
         from transformers import TrainingArguments, TrainerCallback, EarlyStoppingCallback
         import torch
 
         use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+
+        # --- Pre-cache FP16 base weights for GGUF merge step ---
+        # When training with load_in_4bit, save_pretrained_gguf needs FP16 base
+        # weights for the merge. Without them in HF cache, the merge silently
+        # fails and llama.cpp's converter sees bitsandbytes quantization_config
+        # in config.json and throws:
+        #   NotImplementedError: Quant method is not yet supported: 'bitsandbytes'
+        fp16_base = bnb4_to_fp16.get(base_model)
+        if fp16_base:
+            update_progress("loading_model", detail=f"FP16 베이스 모델 캐싱 중: {fp16_base}...")
+            try:
+                from huggingface_hub import snapshot_download
+                snapshot_download(fp16_base, ignore_patterns=["*.gguf", "*.bin"])
+                print(f"FP16 base model cached: {fp16_base}")
+            except Exception as cache_err:
+                print(f"Warning: Could not pre-cache FP16 weights: {cache_err}")
 
         update_progress("loading_model", detail=f"모델 다운로드 중: {base_model}...")
         model, tokenizer = FastLanguageModel.from_pretrained(
@@ -197,34 +238,27 @@ def main():
         gguf_dir = output_dir / "gguf"
         gguf_dir.mkdir(parents=True, exist_ok=True)
 
-        # config.json 복사 (GGUF 변환에 필요)
-        import shutil
-        try:
-            from huggingface_hub import hf_hub_download
-            config_src = hf_hub_download(base_model, "config.json")
-            shutil.copy2(config_src, str(gguf_dir / "config.json"))
-            shutil.copy2(config_src, str(lora_dir / "config.json"))
-        except Exception:
-            pass
+        # NOTE: Do NOT copy the bnb-4bit config.json into gguf_dir.
+        # save_pretrained_gguf handles the merge internally and writes its own
+        # clean config.json. Copying the bnb-4bit config.json causes llama.cpp's
+        # converter to fail with:
+        #   NotImplementedError: Quant method is not yet supported: 'bitsandbytes'
 
+        import shutil
         gguf_success = False
         try:
             model.save_pretrained_gguf(
                 str(gguf_dir), tokenizer, quantization_method="q4_k_m"
             )
-            gguf_success = True
+            # Verify .gguf file was actually produced
+            if list(gguf_dir.glob("*.gguf")):
+                gguf_success = True
+            else:
+                print("GGUF conversion produced no .gguf files (merge may have failed silently)")
         except Exception as gguf_err:
             print(f"GGUF conversion failed: {gguf_err}")
-            # config.json이 gguf_dir에 없으면 lora_dir에서 복사
-            if not (gguf_dir / "config.json").exists() and (lora_dir / "config.json").exists():
-                shutil.copy2(str(lora_dir / "config.json"), str(gguf_dir / "config.json"))
-                try:
-                    model.save_pretrained_gguf(
-                        str(gguf_dir), tokenizer, quantization_method="q4_k_m"
-                    )
-                    gguf_success = True
-                except Exception as gguf_err2:
-                    print(f"GGUF retry failed: {gguf_err2}")
+            import traceback
+            traceback.print_exc()
 
         # --- Ollama 등록 ---
         if gguf_success:
