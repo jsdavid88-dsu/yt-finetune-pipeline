@@ -70,54 +70,53 @@ def main():
 
     # Apply LoRA: W = W + scaling * (B @ A)
     applied = 0
-    for key in list(lora_weights.keys()):
-        if "lora_A" in key:
-            # Find matching B weight
-            b_key = key.replace("lora_A", "lora_B")
-            if b_key not in lora_weights:
-                continue
+    skipped = []
+    for key in sorted(lora_weights.keys()):
+        if "lora_A" not in key:
+            continue
 
-            # Find base weight name
-            # key format: base_model.model.model.language_model.model.layers.0.self_attn.q_proj.lora_A.default.weight
-            base_key = key.replace(".lora_A.default.weight", ".weight")
-            base_key = base_key.replace("base_model.model.", "", 1)
+        # Find matching B weight
+        b_key = key.replace("lora_A", "lora_B")
+        if b_key not in lora_weights:
+            continue
 
-            # Navigate to the parameter
-            parts = base_key.replace(".weight", "").split(".")
-            param = model
-            try:
-                for part in parts:
-                    if hasattr(param, part):
-                        param = getattr(param, part)
-                    else:
-                        param = None
-                        break
-            except Exception:
-                param = None
+        # Extract module path from LoRA key
+        # LoRA key: base_model.model.model.language_model.layers.0.self_attn.q_proj.lora_A.weight
+        # Base key: model.language_model.layers.0.self_attn.q_proj.weight
+        module_path = key.split(".lora_A")[0]  # base_model.model.model.language_model.layers.0.self_attn.q_proj
+        # Remove "base_model.model." prefix
+        module_path = module_path.replace("base_model.model.", "", 1)  # model.language_model.layers.0.self_attn.q_proj
 
-            if param is None or not hasattr(param, 'weight'):
-                # Try without 'linear' wrapper
-                base_key2 = base_key.replace(".linear.weight", ".weight")
-                parts2 = base_key2.replace(".weight", "").split(".")
-                param = model
-                try:
-                    for part in parts2:
-                        if hasattr(param, part):
-                            param = getattr(param, part)
-                        else:
-                            param = None
-                            break
-                except Exception:
-                    param = None
+        # Navigate to the module
+        parts = module_path.split(".")
+        param = model
+        try:
+            for part in parts:
+                param = getattr(param, part)
+        except AttributeError:
+            skipped.append(module_path)
+            continue
 
-            if param is not None and hasattr(param, 'weight'):
-                A = lora_weights[key]
-                B = lora_weights[b_key]
-                delta = (B @ A) * scaling
-                param.weight.data += delta.to(param.weight.dtype)
-                applied += 1
+        # Find the actual weight tensor
+        weight = None
+        if hasattr(param, 'weight'):
+            weight = param.weight
+        elif hasattr(param, 'linear') and hasattr(param.linear, 'weight'):
+            weight = param.linear.weight
+
+        if weight is None:
+            skipped.append(f"{module_path} (no weight)")
+            continue
+
+        A = lora_weights[key]
+        B = lora_weights[b_key]
+        delta = (B.to(weight.dtype) @ A.to(weight.dtype)) * scaling
+        weight.data += delta
+        applied += 1
 
     print(f"  Applied {applied} LoRA layers")
+    if skipped:
+        print(f"  Skipped {len(skipped)}: {skipped[:3]}...")
 
     # [3/4] Save merged model
     print("\n[3/4] Saving merged model...")
