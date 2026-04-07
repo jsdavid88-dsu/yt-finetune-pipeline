@@ -45,24 +45,39 @@ interface Props {
 // ── Helpers ──────────────────────────────────────────────
 
 function parseOutline(text: string): { num: number; description: string }[] {
-  const pattern = /장면\s+(\d+)\/(\d+)\s*\(([^)]+)\)\s*:\s*(.+?)(?=\n\s*장면\s+\d+\/|\s*$)/gs;
   const scenes: { num: number; description: string }[] = [];
+
+  // Pattern 1: "장면 N/T (position): description"
+  const p1 = /장면\s*(\d+)\s*[\/of]\s*(\d+)\s*\([^)]*\)\s*[:：]\s*(.+)/g;
   let m;
-  while ((m = pattern.exec(text)) !== null) {
-    scenes.push({ num: parseInt(m[1]), description: m[4].split("\n")[0].trim() });
+  while ((m = p1.exec(text)) !== null) {
+    scenes.push({ num: parseInt(m[1]), description: m[3].trim().slice(0, 80) });
   }
-  if (scenes.length === 0) {
-    // Fallback: line-by-line
-    const lines = text.split("\n");
-    let sceneNum = 0;
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed && !trimmed.startsWith("감정:") && !trimmed.startsWith("떡밥:")) {
-        sceneNum++;
-        scenes.push({ num: sceneNum, description: trimmed.slice(0, 60) });
-      }
+  if (scenes.length > 0) return scenes;
+
+  // Pattern 2: "장면 N: description" or "N. description"
+  const p2 = /(?:장면\s*)?(\d+)\s*[.:：]\s*(.+)/g;
+  while ((m = p2.exec(text)) !== null) {
+    const num = parseInt(m[1]);
+    const desc = m[2].trim();
+    // Filter out lines that are clearly not scene descriptions
+    if (num > 0 && num <= 30 && desc.length > 5 && !desc.startsWith("감정") && !desc.startsWith("떡밥")) {
+      scenes.push({ num, description: desc.slice(0, 80) });
     }
   }
+  if (scenes.length > 0) return scenes;
+
+  // Pattern 3: Lines starting with "-" or "•" (bullet points)
+  const lines = text.split("\n");
+  let sceneNum = 0;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.match(/^[-•*]\s+/) && trimmed.length > 10) {
+      sceneNum++;
+      scenes.push({ num: sceneNum, description: trimmed.replace(/^[-•*]\s+/, "").slice(0, 80) });
+    }
+  }
+
   return scenes;
 }
 
@@ -225,7 +240,7 @@ export default function StoryEditor({ addLog }: Props) {
                     : sc
                 ),
               }));
-              if (nextNum <= newScenes.length) {
+              if (nextNum <= parsed.length) {
                 setGeneratingSceneNum(nextNum);
                 setGeneratingSceneText("");
               }
