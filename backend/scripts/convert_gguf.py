@@ -29,7 +29,17 @@ def main():
     adapter_cfg = json.loads((lora_dir / "adapter_config.json").read_text(encoding="utf-8"))
     base_model_bnb = adapter_cfg.get("base_model_name_or_path", "")
     # Get non-bnb version
-    base_model = base_model_bnb.replace("-unsloth-bnb-4bit", "").replace("-bnb-4bit", "")
+    # Must use google/ original (not unsloth/) — unsloth models have
+    # Gemma4ClippableLinear which PEFT can't handle
+    BNB_TO_GOOGLE = {
+        "unsloth/gemma-4-E4B-it-unsloth-bnb-4bit": "google/gemma-4-e4b-it",
+        "unsloth/gemma-4-E4B-it": "google/gemma-4-e4b-it",
+        "unsloth/gemma-4-12B-it-unsloth-bnb-4bit": "google/gemma-4-12b-it",
+        "unsloth/gemma-4-12B-it": "google/gemma-4-12b-it",
+        "unsloth/gemma-4-31B-it-unsloth-bnb-4bit": "google/gemma-4-31b-it",
+        "unsloth/gemma-4-31B-it": "google/gemma-4-31b-it",
+    }
+    base_model = BNB_TO_GOOGLE.get(base_model_bnb, base_model_bnb.replace("-unsloth-bnb-4bit", "").replace("-bnb-4bit", ""))
 
     print(f"LoRA: {lora_dir}")
     print(f"Base: {base_model}")
