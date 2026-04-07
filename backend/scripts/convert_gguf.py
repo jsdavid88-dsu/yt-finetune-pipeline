@@ -41,11 +41,16 @@ def main():
 
     print("\n[2/2] Converting to GGUF (q4_k_m)...")
     print("  This may take 10-15 minutes...")
+    # Output to lora_dir itself (has config.json already)
     model.save_pretrained_gguf(
-        str(gguf_dir), tokenizer, quantization_method="q4_k_m"
+        str(lora_dir), tokenizer, quantization_method="q4_k_m"
     )
 
-    # Check output
+    # Move gguf files to gguf_dir
+    gguf_files = list(lora_dir.glob("*.gguf"))
+    for f in gguf_files:
+        import shutil
+        shutil.move(str(f), str(gguf_dir / f.name))
     gguf_files = list(gguf_dir.glob("*.gguf"))
     if not gguf_files:
         print("\nERROR: No GGUF files produced.")
