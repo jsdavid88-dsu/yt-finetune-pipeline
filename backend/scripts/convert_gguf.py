@@ -1,16 +1,13 @@
-"""Convert LoRA adapter to GGUF — bypasses Unsloth completely.
-Loads base model + LoRA with Unsloth, merges, saves safetensors,
-then runs llama.cpp converter directly.
-
+"""Convert LoRA adapter to GGUF — pure transformers, no Unsloth.
 Usage: python convert_gguf.py --lora-dir PATH
 """
 import argparse
+import json
 import os
 import sys
 import shutil
+import subprocess
 from pathlib import Path
-
-os.environ["UNSLOTH_CE_LOSS_TARGET_GB"] = "2"
 
 
 def main():
@@ -22,105 +19,114 @@ def main():
     merged_dir = lora_dir.parent / "merged_full"
     gguf_dir = lora_dir.parent / "gguf"
 
-    # Clean previous attempts
     for d in [merged_dir, gguf_dir]:
         if d.exists():
             shutil.rmtree(d, ignore_errors=True)
     merged_dir.mkdir(parents=True, exist_ok=True)
     gguf_dir.mkdir(parents=True, exist_ok=True)
 
+    # Read adapter config
+    adapter_cfg = json.loads((lora_dir / "adapter_config.json").read_text(encoding="utf-8"))
+    base_model_bnb = adapter_cfg.get("base_model_name_or_path", "")
+    # Get non-bnb version
+    base_model = base_model_bnb.replace("-unsloth-bnb-4bit", "").replace("-bnb-4bit", "")
+
     print(f"LoRA: {lora_dir}")
+    print(f"Base: {base_model}")
     print(f"Merged: {merged_dir}")
     print(f"GGUF: {gguf_dir}")
 
-    from unsloth import FastLanguageModel
     import torch
 
-    # [1/4] Load in 16bit
-    print("\n[1/4] Loading model (16bit)...")
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        str(lora_dir),
-        max_seq_length=2048,
-        load_in_4bit=False,
+    # [1/4] Load base model with raw transformers (NOT Unsloth)
+    print("\n[1/4] Loading base model (transformers, bfloat16)...")
+    print("  This avoids Unsloth's custom layers that block merge")
+
+    # Monkey-patch adapter_config to point to non-bnb model
+    adapter_cfg_backup = lora_dir / "adapter_config.json.bak"
+    shutil.copy2(str(lora_dir / "adapter_config.json"), str(adapter_cfg_backup))
+
+    adapter_cfg["base_model_name_or_path"] = base_model
+    (lora_dir / "adapter_config.json").write_text(
+        json.dumps(adapter_cfg, indent=2, ensure_ascii=False), encoding="utf-8"
     )
 
-    # [2/4] Merge LoRA and save as safetensors manually
-    print("\n[2/4] Merging LoRA + saving safetensors...")
-    # Use Unsloth's internal merge
-    model.save_pretrained_merged(
-        str(merged_dir),
-        tokenizer,
-        save_method="merged_16bit",
-    )
+    try:
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from peft import PeftModel
 
-    # Check if safetensors were actually saved
-    st_files = list(merged_dir.glob("*.safetensors"))
-    if not st_files:
-        print("  WARNING: No safetensors in merged dir. Trying manual save...")
-        # Fallback: disable adapter and save base model directly
-        try:
-            model.disable_adapter_layers()
-            model.base_model.save_pretrained(str(merged_dir), safe_serialization=True)
-            tokenizer.save_pretrained(str(merged_dir))
-            st_files = list(merged_dir.glob("*.safetensors"))
-        except Exception as e:
-            print(f"  Manual save failed: {e}")
+        model = AutoModelForCausalLM.from_pretrained(
+            base_model,
+            dtype=torch.bfloat16,
+            device_map="cpu",  # CPU to save GPU memory for larger models
+            trust_remote_code=True,
+        )
+        tokenizer = AutoTokenizer.from_pretrained(base_model, trust_remote_code=True)
+
+        # [2/4] Load and merge LoRA
+        print("\n[2/4] Merging LoRA adapter...")
+        model = PeftModel.from_pretrained(model, str(lora_dir))
+        model = model.merge_and_unload()
+
+        # [3/4] Save merged model
+        print("\n[3/4] Saving merged safetensors...")
+        model.save_pretrained(str(merged_dir), safe_serialization=True)
+        tokenizer.save_pretrained(str(merged_dir))
+
+        # Clean config.json
+        config_path = merged_dir / "config.json"
+        if config_path.exists():
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            config.pop("quantization_config", None)
+            config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
+
+        st_files = list(merged_dir.glob("*.safetensors"))
+        print(f"  Saved {len(st_files)} file(s)")
+
+        del model
+        torch.cuda.empty_cache()
+
+    finally:
+        # Restore original adapter_config
+        if adapter_cfg_backup.exists():
+            shutil.move(str(adapter_cfg_backup), str(lora_dir / "adapter_config.json"))
 
     if not st_files:
-        print("\nERROR: Could not save merged model as safetensors.")
-        print("The LoRA adapter is saved at:", lora_dir)
+        print("ERROR: No safetensors saved")
         sys.exit(1)
 
-    # Make sure config.json exists and is clean (no bitsandbytes)
-    config_path = merged_dir / "config.json"
-    if config_path.exists():
-        import json
-        config = json.loads(config_path.read_text(encoding="utf-8"))
-        if "quantization_config" in config:
-            del config["quantization_config"]
-            config_path.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")
-            print("  Cleaned quantization_config from config.json")
-
-    print(f"  Saved {len(st_files)} safetensors file(s)")
-
-    # Free GPU
-    del model
-    torch.cuda.empty_cache()
-
-    # [3/4] Convert to GGUF with llama.cpp
-    print("\n[3/4] Converting to GGUF...")
-    import subprocess
-
+    # [4/4] Convert to GGUF
+    print("\n[4/4] Converting to GGUF...")
     converter = Path.home() / ".unsloth" / "llama.cpp" / "convert_hf_to_gguf.py"
-    if not converter.exists():
-        converter = Path.home() / ".unsloth" / "llama.cpp" / "unsloth_convert_hf_to_gguf.py"
 
-    venv_python = Path(sys.executable)
     gguf_bf16 = gguf_dir / "model-bf16.gguf"
     gguf_q4 = gguf_dir / "model-q4_k_m.gguf"
 
-    print("  HF → GGUF bf16...")
+    print("  HF → bf16 GGUF...")
     result = subprocess.run(
-        [str(venv_python), str(converter),
+        [sys.executable, str(converter),
          "--outfile", str(gguf_bf16),
          "--outtype", "bf16",
          str(merged_dir)],
     )
 
     if result.returncode != 0:
-        print(f"\n  HF→GGUF conversion failed (exit code {result.returncode})")
-        print("  Check if llama.cpp supports Gemma4.")
+        print("  GGUF conversion failed.")
         print("  Try: update_llamacpp.bat")
         sys.exit(1)
 
     # Quantize
-    quantize_bin = Path.home() / ".unsloth" / "llama.cpp" / "build" / "bin" / "Release" / "llama-quantize.exe"
-    if not quantize_bin.exists():
-        quantize_bin = Path.home() / ".unsloth" / "llama.cpp" / "build" / "bin" / "llama-quantize.exe"
-    if not quantize_bin.exists():
-        quantize_bin = Path.home() / ".unsloth" / "llama.cpp" / "build" / "bin" / "llama-quantize"
+    quantize_bin = None
+    for p in [
+        Path.home() / ".unsloth" / "llama.cpp" / "build" / "bin" / "Release" / "llama-quantize.exe",
+        Path.home() / ".unsloth" / "llama.cpp" / "build" / "bin" / "llama-quantize.exe",
+        Path.home() / ".unsloth" / "llama.cpp" / "build" / "bin" / "llama-quantize",
+    ]:
+        if p.exists():
+            quantize_bin = p
+            break
 
-    if quantize_bin.exists():
+    if quantize_bin:
         print("  bf16 → q4_k_m...")
         subprocess.run([str(quantize_bin), str(gguf_bf16), str(gguf_q4), "q4_k_m"])
         if gguf_q4.exists():
@@ -129,17 +135,13 @@ def main():
         else:
             final_gguf = gguf_bf16
     else:
-        print(f"  llama-quantize not found, using bf16 (larger file)")
+        print("  llama-quantize not found, using bf16")
         final_gguf = gguf_bf16
-
-    if not final_gguf.exists():
-        print("\nERROR: GGUF file not created.")
-        sys.exit(1)
 
     print(f"  GGUF: {final_gguf} ({final_gguf.stat().st_size / 1024**3:.1f} GB)")
 
-    # [4/4] Register with Ollama
-    print("\n[4/4] Registering with Ollama...")
+    # Register with Ollama
+    print("\nRegistering with Ollama...")
     project_name = lora_dir.parent.parent.name
     modelfile = gguf_dir / "Modelfile"
     modelfile.write_text(f"FROM {final_gguf.name}\n", encoding="utf-8")
@@ -149,7 +151,6 @@ def main():
         cwd=str(gguf_dir),
     )
     print(f"\nDone! Model: storyforge-{project_name}")
-    print(f"Test: ollama run storyforge-{project_name}")
 
 
 if __name__ == "__main__":
