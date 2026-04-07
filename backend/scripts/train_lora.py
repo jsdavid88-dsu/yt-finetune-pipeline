@@ -192,31 +192,75 @@ def main():
         model.save_pretrained(str(lora_dir))
         tokenizer.save_pretrained(str(lora_dir))
 
-        # Copy base model config.json to lora dir
+        # --- GGUF 변환 (모델이 메모리에 있을 때 바로 실행) ---
+        update_progress("converting", num_epochs, num_epochs, detail="GGUF 변환 중 (10~15분 소요)...")
+        gguf_dir = output_dir / "gguf"
+        gguf_dir.mkdir(parents=True, exist_ok=True)
+
+        # config.json 복사 (GGUF 변환에 필요)
         import shutil
         try:
             from huggingface_hub import hf_hub_download
             config_src = hf_hub_download(base_model, "config.json")
+            shutil.copy2(config_src, str(gguf_dir / "config.json"))
             shutil.copy2(config_src, str(lora_dir / "config.json"))
         except Exception:
             pass
 
-        # --- Merge + Register via separate script ---
-        update_progress("converting", num_epochs, num_epochs, detail="모델 병합 + Ollama 등록 중...")
-        import subprocess as sp
-        scripts_dir = Path(__file__).resolve().parent
-        merge_result = sp.run(
-            [sys.executable, "-u",
-             str(scripts_dir / "merge_and_register.py"),
-             "--lora-dir", str(lora_dir)],
-        )
+        gguf_success = False
+        try:
+            model.save_pretrained_gguf(
+                str(gguf_dir), tokenizer, quantization_method="q4_k_m"
+            )
+            gguf_success = True
+        except Exception as gguf_err:
+            print(f"GGUF conversion failed: {gguf_err}")
+            # config.json이 gguf_dir에 없으면 lora_dir에서 복사
+            if not (gguf_dir / "config.json").exists() and (lora_dir / "config.json").exists():
+                shutil.copy2(str(lora_dir / "config.json"), str(gguf_dir / "config.json"))
+                try:
+                    model.save_pretrained_gguf(
+                        str(gguf_dir), tokenizer, quantization_method="q4_k_m"
+                    )
+                    gguf_success = True
+                except Exception as gguf_err2:
+                    print(f"GGUF retry failed: {gguf_err2}")
 
-        if merge_result.returncode == 0:
+        # --- Ollama 등록 ---
+        if gguf_success:
+            update_progress("registering", num_epochs, num_epochs, detail="Ollama에 모델 등록 중...")
+
+            ollama_base_map = {
+                "gemma-4-E4B": "gemma4",
+                "gemma-4-12B": "gemma4:12b",
+                "gemma-4-26B": "gemma4:27b",
+                "gemma-4-27B": "gemma4:27b",
+                "gemma-4-31B": "gemma4:31b",
+                "llama-3.1-8b": "llama3.1:8b",
+                "Qwen2.5-7B": "qwen2.5:7b",
+            }
+            ollama_base = "gemma4"
+            for key, val in ollama_base_map.items():
+                if key.lower() in base_model.lower():
+                    ollama_base = val
+                    break
+
+            import subprocess as sp
+            project_name = project_dir.name
+            gguf_files = list(gguf_dir.glob("*.gguf"))
+            if gguf_files:
+                modelfile_path = gguf_dir / "Modelfile"
+                modelfile_path.write_text(
+                    f"FROM {ollama_base}\nADAPTER {gguf_files[0].name}\n", encoding="utf-8"
+                )
+                sp.run(
+                    ["ollama", "create", f"storyforge-{project_name}", "-f", str(modelfile_path)],
+                    cwd=str(gguf_dir),
+                )
             update_progress("completed", num_epochs, num_epochs, detail="학습 완료! 모델 등록됨")
         else:
-            # Merge/register failed but training succeeded — not a fatal error
             update_progress("completed", num_epochs, num_epochs,
-                            detail="학습 완료! (Ollama 등록 실패 — register_ollama.bat으로 수동 등록)")
+                            detail="학습 완료! (GGUF 변환 실패 — llama.cpp 업데이트 필요)")
     except Exception as exc:
         update_progress("failed", error=str(exc))
         sys.exit(1)
