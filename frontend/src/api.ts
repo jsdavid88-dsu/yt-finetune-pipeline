@@ -34,9 +34,11 @@ export async function collectStart(
   playlist: boolean,
   projectId: string,
   topPercent?: number | null,
+  maxCount?: number | null,
 ): Promise<{ jobId: string }> {
   const body: any = { url, project_id: projectId };
   if (topPercent) body.top_percent = topPercent;
+  if (maxCount) body.max_count = maxCount;
   return request('/api/collect/start', {
     method: 'POST',
     body: JSON.stringify(body),

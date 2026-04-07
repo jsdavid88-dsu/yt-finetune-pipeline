@@ -40,6 +40,7 @@ class CollectRequest(BaseModel):
     url: str
     project_id: str
     top_percent: Optional[int] = None  # None=전체, 10=상위10%, 25=상위25% 등
+    max_count: Optional[int] = None    # None=전체, 100=최대100개
 
 
 class VideoInfo(BaseModel):

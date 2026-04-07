@@ -58,7 +58,7 @@ export default function CollectTab({ project, addLog, videos, setVideos }: Props
     }
   };
 
-  const handleCollect = async (url: string, playlist: boolean, topPercent: number | null = null) => {
+  const handleCollect = async (url: string, playlist: boolean, topPercent: number | null = null, maxCount: number | null = null) => {
     if (!project) {
       addLog('warn', '먼저 프로젝트를 선택하세요.');
       return;
@@ -69,7 +69,7 @@ export default function CollectTab({ project, addLog, videos, setVideos }: Props
     addLog('info', `수집 시작: ${url}`);
 
     try {
-      const resp = await collectStart(url, playlist, project.id, topPercent);
+      const resp = await collectStart(url, playlist, project.id, topPercent, maxCount);
       const jid = resp.jobId || (resp as any).job_id;
       setJobId(jid);
       addLog('info', `수집 작업 생성됨 (ID: ${jid})`);

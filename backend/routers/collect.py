@@ -106,7 +106,7 @@ def _ensure_project_dir(project_id: str) -> Path:
 # Background task: process collection job
 # ---------------------------------------------------------------------------
 
-async def _run_collect_job(job: CollectJob, top_percent: int | None = None) -> None:
+async def _run_collect_job(job: CollectJob, top_percent: int | None = None, max_count: int | None = None) -> None:
     job.status = JobStatus.running
     try:
         # Support multiple URLs separated by newlines
@@ -129,6 +129,10 @@ async def _run_collect_job(job: CollectJob, top_percent: int | None = None) -> N
             entries.sort(key=lambda e: e.get("view_count", 0) or 0, reverse=True)
             cutoff = max(1, len(entries) * top_percent // 100)
             entries = entries[:cutoff]
+
+        # Limit by max_count
+        if max_count and max_count > 0 and len(entries) > max_count:
+            entries = entries[:max_count]
 
         logger.info(f"[수집] {len(entries)}개 영상 수집 시작 (project: {job.project_id})")
 
@@ -284,14 +288,14 @@ async def start_collection(req: CollectRequest):
 
     _running_projects.add(req.project_id)
 
-    async def _guarded_collect(j: CollectJob, pct: int | None) -> None:
+    async def _guarded_collect(j: CollectJob, pct: int | None, mc: int | None) -> None:
         try:
-            await _run_collect_job(j, top_percent=pct)
+            await _run_collect_job(j, top_percent=pct, max_count=mc)
         finally:
             _running_projects.discard(j.project_id)
 
     # fire and forget
-    asyncio.create_task(_guarded_collect(job, req.top_percent))
+    asyncio.create_task(_guarded_collect(job, req.top_percent, req.max_count))
 
     return {"job_id": job.job_id, "status": job.status}
 

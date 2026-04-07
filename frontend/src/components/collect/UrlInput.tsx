@@ -7,7 +7,7 @@ interface PlaylistPreview {
 }
 
 interface Props {
-  onSubmit: (url: string, playlist: boolean, topPercent: number | null) => void;
+  onSubmit: (url: string, playlist: boolean, topPercent: number | null, maxCount: number | null) => void;
   loading: boolean;
   onPreview?: (url: string) => Promise<PlaylistPreview | null>;
 }
@@ -29,6 +29,7 @@ export default function UrlInput({ onSubmit, loading, onPreview }: Props) {
   const [url, setUrl] = useState('');
   const [playlist, setPlaylist] = useState(false);
   const [topPercent, setTopPercent] = useState<number | null>(null);
+  const [maxCount, setMaxCount] = useState<number | null>(100);
   const [preview, setPreview] = useState<PlaylistPreview | null>(null);
   const [previewing, setPreviewing] = useState(false);
 
@@ -36,7 +37,7 @@ export default function UrlInput({ onSubmit, loading, onPreview }: Props) {
     e.preventDefault();
     if (!url.trim()) return;
     const urls = url.split('\n').map(u => u.trim()).filter(u => u.length > 0);
-    onSubmit(urls.join('\n'), playlist, topPercent);
+    onSubmit(urls.join('\n'), playlist, topPercent, maxCount);
   };
 
   const handlePreview = async () => {
@@ -130,6 +131,21 @@ export default function UrlInput({ onSubmit, loading, onPreview }: Props) {
             ))}
           </select>
           <span className="text-xs text-gray-500">(조회수 기준)</span>
+        </div>
+
+        {/* Max count */}
+        <div className="flex items-center gap-2 text-sm text-gray-400">
+          <span className="text-xs">최대</span>
+          <input
+            type="number"
+            value={maxCount ?? ''}
+            onChange={(e) => setMaxCount(e.target.value ? Number(e.target.value) : null)}
+            placeholder="전체"
+            className="w-16 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-300"
+            min={1}
+            disabled={loading}
+          />
+          <span className="text-xs text-gray-500">개</span>
         </div>
       </div>
 
