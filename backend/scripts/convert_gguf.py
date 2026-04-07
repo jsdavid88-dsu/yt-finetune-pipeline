@@ -13,10 +13,10 @@ os.environ["UNSLOTH_CE_LOSS_TARGET_GB"] = "2"
 
 # Map from bnb-4bit model names to their FP16 counterparts
 BNB4_TO_FP16_MAP = {
-    "unsloth/gemma-4-E4B-it-unsloth-bnb-4bit": "google/gemma-4-E4B-it",
-    "unsloth/gemma-4-12B-it-unsloth-bnb-4bit": "google/gemma-4-12B-it",
-    "unsloth/gemma-4-27B-it-unsloth-bnb-4bit": "google/gemma-4-27B-it",
-    "unsloth/gemma-4-31B-it-unsloth-bnb-4bit": "google/gemma-4-31B-it",
+    "unsloth/gemma-4-E4B-it-unsloth-bnb-4bit": "unsloth/gemma-4-E4B-it",
+    "unsloth/gemma-4-12B-it-unsloth-bnb-4bit": "unsloth/gemma-4-12B-it",
+    "unsloth/gemma-4-27B-it-unsloth-bnb-4bit": "unsloth/gemma-4-27B-it",
+    "unsloth/gemma-4-31B-it-unsloth-bnb-4bit": "unsloth/gemma-4-31B-it",
 }
 
 

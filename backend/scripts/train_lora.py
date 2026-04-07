@@ -70,10 +70,10 @@ def main():
         # Pre-cache FP16 base model for GGUF conversion later
         # Without this, save_pretrained_gguf can't merge 4bit → 16bit
         BNB4_TO_FP16 = {
-            "unsloth/gemma-4-E4B-it-unsloth-bnb-4bit": "google/gemma-4-E4B-it",
-            "unsloth/gemma-4-12B-it-unsloth-bnb-4bit": "google/gemma-4-12B-it",
-            "unsloth/gemma-4-27B-it-unsloth-bnb-4bit": "google/gemma-4-27B-it",
-            "unsloth/gemma-4-31B-it-unsloth-bnb-4bit": "google/gemma-4-31B-it",
+            "unsloth/gemma-4-E4B-it-unsloth-bnb-4bit": "unsloth/gemma-4-E4B-it",
+            "unsloth/gemma-4-12B-it-unsloth-bnb-4bit": "unsloth/gemma-4-12B-it",
+            "unsloth/gemma-4-27B-it-unsloth-bnb-4bit": "unsloth/gemma-4-27B-it",
+            "unsloth/gemma-4-31B-it-unsloth-bnb-4bit": "unsloth/gemma-4-31B-it",
         }
         fp16_name = BNB4_TO_FP16.get(base_model)
         if fp16_name:
