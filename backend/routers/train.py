@@ -17,9 +17,9 @@ async def gpu_check():
 @router.get("/models")
 async def list_models():
     return [
-        {"id": "unsloth/gemma-4-26B-A4B-it", "name": "Gemma 4 26B MoE (활성4B) [추천]", "params": "26B/4B", "vram": "~16GB"},
-        {"id": "unsloth/gemma-4-E4B-it-unsloth-bnb-4bit", "name": "Gemma 4 8B (4-bit)", "params": "8B", "vram": "~12GB"},
-        {"id": "unsloth/gemma-4-31B-it-unsloth-bnb-4bit", "name": "Gemma 4 31B (4-bit)", "params": "31B", "vram": "~24GB+"},
+        {"id": "unsloth/gemma-4-E4B-it", "name": "Gemma 4 8B (16bit LoRA)", "params": "8B", "vram": "~17GB"},
+        {"id": "unsloth/gemma-4-31B-it", "name": "Gemma 4 31B (16bit LoRA)", "params": "31B", "vram": "~34GB+"},
+        {"id": "unsloth/gemma-4-26B-A4B-it", "name": "Gemma 4 26B MoE (16bit)", "params": "26B/4B", "vram": "~28GB"},
     ]
 
 

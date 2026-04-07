@@ -65,24 +65,7 @@ def main():
     try:
         # Import (should work since setup_train_env prepared the venv)
         update_progress("loading_model", detail="Unsloth 로딩 중...")
-        from unsloth import FastLanguageModel
-
-        # Pre-cache FP16 base model for GGUF conversion later
-        # Without this, save_pretrained_gguf can't merge 4bit → 16bit
-        BNB4_TO_FP16 = {
-            "unsloth/gemma-4-E4B-it-unsloth-bnb-4bit": "unsloth/gemma-4-E4B-it",
-            "unsloth/gemma-4-12B-it-unsloth-bnb-4bit": "unsloth/gemma-4-12B-it",
-            "unsloth/gemma-4-27B-it-unsloth-bnb-4bit": "unsloth/gemma-4-27B-it",
-            "unsloth/gemma-4-31B-it-unsloth-bnb-4bit": "unsloth/gemma-4-31B-it",
-        }
-        fp16_name = BNB4_TO_FP16.get(base_model)
-        if fp16_name:
-            update_progress("loading_model", detail=f"FP16 베이스 모델 캐싱 중: {fp16_name}...")
-            try:
-                from huggingface_hub import snapshot_download
-                snapshot_download(fp16_name, ignore_patterns=["*.gguf", "*.bin"])
-            except Exception as cache_err:
-                print(f"FP16 pre-cache warning: {cache_err}")
+        from unsloth import FastModel
         from datasets import load_dataset
         from trl import SFTTrainer
         from transformers import TrainingArguments, TrainerCallback, EarlyStoppingCallback
@@ -90,42 +73,34 @@ def main():
 
         use_bf16 = torch.cuda.is_available() and torch.cuda.is_bf16_supported()
 
-        # --- Pre-cache FP16 base weights for GGUF merge step ---
-        # When training with load_in_4bit, save_pretrained_gguf needs FP16 base
-        # weights for the merge. Without them in HF cache, the merge silently
-        # fails and llama.cpp's converter sees bitsandbytes quantization_config
-        # in config.json and throws:
-        #   NotImplementedError: Quant method is not yet supported: 'bitsandbytes'
-        fp16_base = bnb4_to_fp16.get(base_model)
-        if fp16_base:
-            update_progress("loading_model", detail=f"FP16 베이스 모델 캐싱 중: {fp16_base}...")
-            try:
-                from huggingface_hub import snapshot_download
-                snapshot_download(fp16_base, ignore_patterns=["*.gguf", "*.bin"])
-                print(f"FP16 base model cached: {fp16_base}")
-            except Exception as cache_err:
-                print(f"Warning: Could not pre-cache FP16 weights: {cache_err}")
+        # Use non-bnb model for 16bit training (GGUF merge works cleanly)
+        # bnb-4bit models cause merge failures with save_pretrained_gguf
+        NON_BNB = {
+            "unsloth/gemma-4-E4B-it-unsloth-bnb-4bit": "unsloth/gemma-4-E4B-it",
+            "unsloth/gemma-4-31B-it-unsloth-bnb-4bit": "unsloth/gemma-4-31B-it",
+        }
+        actual_model = NON_BNB.get(base_model, base_model)
 
-        update_progress("loading_model", detail=f"모델 다운로드 중: {base_model}...")
-        model, tokenizer = FastLanguageModel.from_pretrained(
-            model_name=base_model,
+        update_progress("loading_model", detail=f"모델 다운로드 중: {actual_model}...")
+        model, tokenizer = FastModel.from_pretrained(
+            model_name=actual_model,
             max_seq_length=max_seq_length,
-            load_in_4bit=True,
+            load_in_4bit=False,
+            full_finetuning=False,
         )
 
         update_progress("loading_model", detail="LoRA 어댑터 설정 중...")
-        model = FastLanguageModel.get_peft_model(
+        model = FastModel.get_peft_model(
             model,
+            finetune_vision_layers=False,
+            finetune_language_layers=True,
+            finetune_attention_modules=True,
+            finetune_mlp_modules=True,
             r=lora_rank,
-            target_modules=[
-                "q_proj", "k_proj", "v_proj", "o_proj",
-                "gate_proj", "up_proj", "down_proj",
-            ],
             lora_alpha=lora_alpha,
             lora_dropout=0,
             bias="none",
-            use_gradient_checkpointing="unsloth",
-            use_rslora=True,
+            random_state=42,
         )
 
         # --- Dataset ---
