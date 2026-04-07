@@ -1,44 +1,26 @@
 @echo off
 chcp 65001 >nul
-echo === Register Model to Ollama ===
+echo === Merge + Register to Ollama ===
 
 set "ROOT=%~dp0"
+set "VENV_PY=%ROOT%backend\.train-venv\Scripts\python.exe"
 
-:: Find merged_16bit folder first, then lora
+if not exist "%VENV_PY%" (
+    echo ERROR - .train-venv not found. Run training first.
+    pause
+    exit /b 1
+)
+
 for /d %%d in ("%ROOT%backend\data\*") do (
-    if exist "%%d\adapters\merged_16bit\config.json" (
-        set "MODEL_DIR=%%d\adapters\merged_16bit"
-        for %%n in (%%d) do set "PROJECT=%%~nn"
-        echo Found merged model: %%d\adapters\merged_16bit
-        goto :found
+    if exist "%%d\adapters\lora\adapter_config.json" (
+        echo Found LoRA: %%d\adapters\lora
+        "%VENV_PY%" -u "%ROOT%backend\scripts\merge_and_register.py" --lora-dir "%%d\adapters\lora"
+        goto :done
     )
 )
-echo No merged model found.
-pause
-exit /b 1
 
-:found
-echo.
-echo Creating Modelfile...
-echo FROM %MODEL_DIR%> "%MODEL_DIR%\Modelfile"
-echo Modelfile:
-type "%MODEL_DIR%\Modelfile"
-echo.
+echo ERROR - No LoRA adapter found. Train a model first.
 
-echo Registering with Ollama (experimental + q4_K_M quantize)...
-echo This may take several minutes...
-ollama create storyforge-%PROJECT% -f "%MODEL_DIR%\Modelfile" --experimental -q q4_K_M
-
-if errorlevel 1 (
-    echo.
-    echo ERROR - Failed. Ollama version:
-    ollama --version
-) else (
-    echo.
-    echo === Success! ===
-    echo Model: storyforge-%PROJECT%
-    echo Test: ollama run storyforge-%PROJECT% "hello"
-)
-
+:done
 echo.
 pause

@@ -186,62 +186,37 @@ def main():
 
         trainer.train()
 
-        # --- Convert + Register ---
-        update_progress("converting", num_epochs, num_epochs, detail="LoRA 저장 중...")
+        # --- Save LoRA adapter ---
+        update_progress("converting", num_epochs, num_epochs, detail="LoRA 어댑터 저장 중...")
         lora_dir = output_dir / "lora"
         model.save_pretrained(str(lora_dir))
         tokenizer.save_pretrained(str(lora_dir))
 
-        # Copy base model config.json to lora dir (needed for GGUF conversion)
+        # Copy base model config.json to lora dir
         import shutil
-        from huggingface_hub import hf_hub_download
         try:
+            from huggingface_hub import hf_hub_download
             config_src = hf_hub_download(base_model, "config.json")
             shutil.copy2(config_src, str(lora_dir / "config.json"))
         except Exception:
-            # Fallback: try to find config in HF cache
             pass
 
-        update_progress("converting", num_epochs, num_epochs, detail="GGUF 변환 중...")
-        gguf_dir = output_dir / "gguf"
-        gguf_dir.mkdir(parents=True, exist_ok=True)
-        model.save_pretrained_gguf(
-            str(gguf_dir), tokenizer, quantization_method="q4_k_m"
+        # --- Merge + Register via separate script ---
+        update_progress("converting", num_epochs, num_epochs, detail="모델 병합 + Ollama 등록 중...")
+        import subprocess as sp
+        scripts_dir = Path(__file__).resolve().parent
+        merge_result = sp.run(
+            [sys.executable, "-u",
+             str(scripts_dir / "merge_and_register.py"),
+             "--lora-dir", str(lora_dir)],
         )
 
-        update_progress("registering", num_epochs, num_epochs, detail="Ollama 모델 등록 중...")
-
-        ollama_base_map = {
-            "gemma-4-E4B": "gemma4",
-            "gemma-4-12B": "gemma4:12b",
-            "gemma-4-26B": "gemma4:27b",
-            "gemma-4-27B": "gemma4:27b",
-            "gemma-4-31B": "gemma4:31b",
-            "llama-3.1-8b": "llama3.1:8b",
-            "Qwen2.5-7B": "qwen2.5:7b",
-        }
-        ollama_base = "gemma4"
-        for key, val in ollama_base_map.items():
-            if key.lower() in base_model.lower():
-                ollama_base = val
-                break
-
-        import subprocess as sp
-        sp.run(["ollama", "pull", ollama_base], capture_output=True)
-
-        project_name = project_dir.name
-        gguf_files = list(gguf_dir.glob("*.gguf"))
-        if gguf_files:
-            modelfile_path = gguf_dir / "Modelfile"
-            modelfile_path.write_text(
-                f"FROM {ollama_base}\nADAPTER {gguf_files[0].name}\n", encoding="utf-8"
-            )
-            sp.run(
-                ["ollama", "create", f"storyforge-{project_name}", "-f", str(modelfile_path)],
-                cwd=str(gguf_dir), capture_output=True,
-            )
-
-        update_progress("completed", num_epochs, num_epochs, detail="학습 완료!")
+        if merge_result.returncode == 0:
+            update_progress("completed", num_epochs, num_epochs, detail="학습 완료! 모델 등록됨")
+        else:
+            # Merge/register failed but training succeeded — not a fatal error
+            update_progress("completed", num_epochs, num_epochs,
+                            detail="학습 완료! (Ollama 등록 실패 — register_ollama.bat으로 수동 등록)")
     except Exception as exc:
         update_progress("failed", error=str(exc))
         sys.exit(1)
