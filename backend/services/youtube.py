@@ -94,6 +94,15 @@ def _clean_subtitle_text(raw: str) -> str:
 # yt-dlp wrappers (run in thread to keep async)
 # ---------------------------------------------------------------------------
 
+def _get_cookies_path() -> str | None:
+    """Find browser cookies file for yt-dlp authentication."""
+    from pathlib import Path
+    cookies_path = Path(__file__).resolve().parent.parent / "cookies.txt"
+    if cookies_path.exists():
+        return str(cookies_path)
+    return None
+
+
 def _extract_info(url: str, *, playlist: bool = True) -> dict:
     """Extract info dict(s) using yt-dlp. Does NOT download media."""
     ydl_opts: dict = {
@@ -104,7 +113,15 @@ def _extract_info(url: str, *, playlist: bool = True) -> dict:
         "writeautomaticsub": True,
         "subtitlesformat": "vtt",
         "ignoreerrors": True,
+        "sleep_interval": 1,          # 1초 딜레이 (rate limit 방지)
+        "max_sleep_interval": 3,      # 최대 3초 랜덤 딜레이
     }
+
+    # Use cookies if available (reduces rate limiting)
+    cookies = _get_cookies_path()
+    if cookies:
+        ydl_opts["cookiefile"] = cookies
+
     if not playlist:
         ydl_opts["noplaylist"] = True
 
