@@ -32,9 +32,15 @@ export default function LossChart({
 
   // Only show last 50 data points to keep chart readable
   const displayLosses = losses.length > 50 ? losses.slice(-50) : losses;
-  const minLoss = displayLosses.length > 0 ? Math.min(...displayLosses) : 0;
-  const maxLoss = displayLosses.length > 0 ? Math.max(...displayLosses) : 1;
-  const range = maxLoss - minLoss || 1;
+  // Use recent values for scale (last 80%) to avoid early outliers crushing the chart
+  const recentStart = Math.max(0, Math.floor(displayLosses.length * 0.2));
+  const recentLosses = displayLosses.slice(recentStart);
+  const minLoss = recentLosses.length > 0 ? Math.min(...recentLosses) : 0;
+  const maxLoss = recentLosses.length > 0 ? Math.max(...recentLosses) : 1;
+  // Add 10% padding
+  const padding = (maxLoss - minLoss) * 0.1 || 0.1;
+  const scaleMin = Math.max(0, minLoss - padding);
+  const scaleMax = maxLoss + padding;
 
   return (
     <div className="card h-full flex flex-col">
@@ -53,15 +59,19 @@ export default function LossChart({
         {/* Chart */}
         <div className="flex-1 flex items-end gap-px min-h-[100px]">
           {displayLosses.map((loss, i) => {
-            const normalized = (loss - minLoss) / range;
+            // Clamp to scale range, then normalize
+            const clamped = Math.min(Math.max(loss, scaleMin), scaleMax);
+            const normalized = (clamped - scaleMin) / (scaleMax - scaleMin);
             const height = Math.max(4, normalized * 100);
+            // Color: green when low, blue when mid, red when high
+            const hue = Math.max(0, 200 - normalized * 200); // 200(blue) → 0(red)
             return (
               <div
                 key={i}
                 className="flex-1 rounded-t transition-all duration-200 min-w-[2px]"
                 style={{
                   height: `${height}%`,
-                  background: `linear-gradient(to top, #2563eb, #3b82f6)`,
+                  background: `hsl(${hue}, 70%, 50%)`,
                 }}
                 title={`Step ${losses.length - displayLosses.length + i + 1}: ${loss.toFixed(4)}`}
               />
@@ -80,8 +90,9 @@ export default function LossChart({
         {/* Y-axis labels */}
         {displayLosses.length > 0 && (
           <div className="flex justify-between text-[10px] text-gray-600 mt-1">
-            <span>min: {minLoss.toFixed(3)}</span>
-            <span>max: {maxLoss.toFixed(3)}</span>
+            <span>{scaleMin.toFixed(2)}</span>
+            <span>최근 범위</span>
+            <span>{scaleMax.toFixed(2)}</span>
           </div>
         )}
       </div>
