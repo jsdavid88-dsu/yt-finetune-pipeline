@@ -32,19 +32,48 @@ def main():
         load_in_4bit=True,
     )
 
-    print("Saving merged model...")
-    model.save_pretrained_merged(
-        str(output_dir),
-        tokenizer,
-        save_method="merged_4bit_forced",
-    )
+    # Try 16bit merge first, then 4bit forced as fallback
+    print("Saving merged model (16bit)...")
+    try:
+        model.save_pretrained_merged(
+            str(output_dir),
+            tokenizer,
+            save_method="merged_16bit",
+        )
+    except Exception as e1:
+        print(f"16bit merge failed: {e1}")
+        print("Trying lora_only method...")
+        try:
+            model.save_pretrained_merged(
+                str(output_dir),
+                tokenizer,
+                save_method="lora",
+            )
+        except Exception as e2:
+            print(f"lora method also failed: {e2}")
+            print("Skipping merge, trying direct GGUF...")
 
     print("Converting to GGUF (q4_k_m)...")
-    model.save_pretrained_gguf(
-        str(output_dir),
-        tokenizer,
-        quantization_method="q4_k_m",
-    )
+    try:
+        model.save_pretrained_gguf(
+            str(output_dir),
+            tokenizer,
+            quantization_method="q4_k_m",
+        )
+    except Exception as e:
+        print(f"GGUF conversion failed: {e}")
+        print("\nFallback: Saving as LoRA-only GGUF...")
+        try:
+            model.save_pretrained_gguf(
+                str(lora_dir),
+                tokenizer,
+                quantization_method="q4_k_m",
+            )
+            output_dir = lora_dir
+        except Exception as e2:
+            print(f"All GGUF methods failed: {e2}")
+            print("You may need to convert on a different machine.")
+            sys.exit(1)
 
     # Register with Ollama
     gguf_files = list(output_dir.glob("*.gguf"))
