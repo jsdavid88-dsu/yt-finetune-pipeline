@@ -1,57 +1,43 @@
 @echo off
 chcp 65001 >nul
-echo === Register LoRA to Ollama ===
+echo === Register Model to Ollama ===
 
 set "ROOT=%~dp0"
 
+:: Find merged_16bit folder first, then lora
 for /d %%d in ("%ROOT%backend\data\*") do (
-    if exist "%%d\adapters\lora\adapter_config.json" (
-        set "LORA_DIR=%%d\adapters\lora"
+    if exist "%%d\adapters\merged_16bit\config.json" (
+        set "MODEL_DIR=%%d\adapters\merged_16bit"
         for %%n in (%%d) do set "PROJECT=%%~nn"
+        echo Found merged model: %%d\adapters\merged_16bit
         goto :found
     )
 )
-echo ERROR - No LoRA adapter found.
+echo No merged model found.
 pause
 exit /b 1
 
 :found
-echo Found LoRA: %LORA_DIR%
+echo.
+echo Creating Modelfile...
+echo FROM %MODEL_DIR%> "%MODEL_DIR%\Modelfile"
+echo Modelfile:
+type "%MODEL_DIR%\Modelfile"
 echo.
 
-echo Step 1: Checking Modelfile...
-echo FROM gemma4:latest> "%LORA_DIR%\Modelfile"
-echo ADAPTER %LORA_DIR%>> "%LORA_DIR%\Modelfile"
-echo Modelfile contents:
-type "%LORA_DIR%\Modelfile"
-echo.
-
-echo Step 2: Creating Ollama model...
-ollama create storyforge-%PROJECT% -f "%LORA_DIR%\Modelfile"
-
-echo.
-echo Result: %errorlevel%
-echo.
+echo Registering with Ollama (experimental + q4_K_M quantize)...
+echo This may take several minutes...
+ollama create storyforge-%PROJECT% -f "%MODEL_DIR%\Modelfile" --experimental -q q4_K_M
 
 if errorlevel 1 (
-    echo Failed. Showing error details...
     echo.
-    echo Trying with --experimental flag...
-    ollama create storyforge-%PROJECT% -f "%LORA_DIR%\Modelfile" --experimental
-    echo.
-    if errorlevel 1 (
-        echo Still failed. Ollama version:
-        ollama --version
-        echo.
-        echo Contents of lora dir:
-        dir "%LORA_DIR%"
-    ) else (
-        echo === Success with --experimental! ===
-        echo Model: storyforge-%PROJECT%
-    )
+    echo ERROR - Failed. Ollama version:
+    ollama --version
 ) else (
+    echo.
     echo === Success! ===
     echo Model: storyforge-%PROJECT%
+    echo Test: ollama run storyforge-%PROJECT% "hello"
 )
 
 echo.
