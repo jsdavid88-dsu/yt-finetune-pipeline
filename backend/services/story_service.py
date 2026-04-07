@@ -308,9 +308,10 @@ async def _generate_single_scene(
         for j in range(start, len(prev_summaries))
     )
 
+    # Match training data format (Task 2) as closely as possible
     prompt = (
         f"장르: {genre}\n"
-        f"주제: {topic}\n"
+        f"에피소드: {topic}\n"
         f"장면 {scene_num}/{total}\n"
         f"현재 장면: {scene_description}\n"
         + (f"이전 흐름: {prev_flow}\n" if prev_flow else "")
@@ -324,7 +325,7 @@ async def _generate_single_scene(
             return await ollama_generate(
                 model=model,
                 prompt=prompt,
-                system=f"당신은 {genre} 장르의 스토리 작가입니다. 몰입감 있는 장면을 작성하세요.",
+                system="",  # No system prompt — match training data format
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
