@@ -188,12 +188,25 @@ def main():
 
         # --- Convert + Register ---
         update_progress("converting", num_epochs, num_epochs, detail="LoRA 저장 중...")
-        model.save_pretrained(str(output_dir / "lora"))
-        tokenizer.save_pretrained(str(output_dir / "lora"))
+        lora_dir = output_dir / "lora"
+        model.save_pretrained(str(lora_dir))
+        tokenizer.save_pretrained(str(lora_dir))
+
+        # Copy base model config.json to lora dir (needed for GGUF conversion)
+        import shutil
+        from huggingface_hub import hf_hub_download
+        try:
+            config_src = hf_hub_download(base_model, "config.json")
+            shutil.copy2(config_src, str(lora_dir / "config.json"))
+        except Exception:
+            # Fallback: try to find config in HF cache
+            pass
 
         update_progress("converting", num_epochs, num_epochs, detail="GGUF 변환 중...")
+        gguf_dir = output_dir / "gguf"
+        gguf_dir.mkdir(parents=True, exist_ok=True)
         model.save_pretrained_gguf(
-            str(output_dir), tokenizer, quantization_method="q4_k_m"
+            str(gguf_dir), tokenizer, quantization_method="q4_k_m"
         )
 
         update_progress("registering", num_epochs, num_epochs, detail="Ollama 모델 등록 중...")
@@ -217,15 +230,15 @@ def main():
         sp.run(["ollama", "pull", ollama_base], capture_output=True)
 
         project_name = project_dir.name
-        gguf_files = list(output_dir.glob("*.gguf"))
+        gguf_files = list(gguf_dir.glob("*.gguf"))
         if gguf_files:
-            modelfile_path = output_dir / "Modelfile"
+            modelfile_path = gguf_dir / "Modelfile"
             modelfile_path.write_text(
                 f"FROM {ollama_base}\nADAPTER {gguf_files[0].name}\n", encoding="utf-8"
             )
             sp.run(
                 ["ollama", "create", f"storyforge-{project_name}", "-f", str(modelfile_path)],
-                cwd=str(output_dir), capture_output=True,
+                cwd=str(gguf_dir), capture_output=True,
             )
 
         update_progress("completed", num_epochs, num_epochs, detail="학습 완료!")
