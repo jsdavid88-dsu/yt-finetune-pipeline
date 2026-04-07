@@ -41,6 +41,25 @@ def main():
         save_method="merged_16bit",
     )
 
+    # Ensure config.json exists in merged dir
+    import shutil
+    merged_config = merged_dir / "config.json"
+    if not merged_config.exists():
+        # Copy from lora dir
+        lora_config = lora_dir / "config.json"
+        if lora_config.exists():
+            shutil.copy2(str(lora_config), str(merged_config))
+            print("  Copied config.json from lora dir")
+        else:
+            # Copy from HF cache
+            try:
+                from huggingface_hub import hf_hub_download
+                src = hf_hub_download("unsloth/gemma-4-E4B-it-unsloth-bnb-4bit", "config.json")
+                shutil.copy2(src, str(merged_config))
+                print("  Copied config.json from HF cache")
+            except Exception:
+                print("  WARNING: config.json not found anywhere")
+
     # Free GPU memory
     del model
     torch.cuda.empty_cache()
