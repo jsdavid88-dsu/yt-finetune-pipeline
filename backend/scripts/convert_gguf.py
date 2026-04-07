@@ -80,12 +80,13 @@ def main():
 
     from unsloth import FastLanguageModel
 
-    # Load with Unsloth (same way as training)
-    print("\n[1/3] Loading model with Unsloth...")
+    # Load with Unsloth in 16bit (NOT 4bit) so merge works
+    print("\n[1/3] Loading model with Unsloth (16bit for clean merge)...")
+    print("  This needs ~16GB VRAM for 8B model")
     model, tokenizer = FastLanguageModel.from_pretrained(
         str(lora_dir),
         max_seq_length=2048,
-        load_in_4bit=True,
+        load_in_4bit=False,
     )
 
     # GGUF conversion (Unsloth handles merge internally)
