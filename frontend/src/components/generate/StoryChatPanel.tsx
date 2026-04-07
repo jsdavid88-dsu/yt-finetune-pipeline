@@ -52,7 +52,21 @@ export default function StoryChatPanel({
       <div className="flex-1 overflow-y-auto p-3 space-y-3">
         {disabled && (
           <div className="text-xs text-gray-600 text-center mt-8">
-            {"\uC544\uC6C3\uB77C\uC778\uC744 \uBA3C\uC800 \uC0DD\uC131\uD558\uC138\uC694"}
+            아웃라인을 먼저 생성하세요
+          </div>
+        )}
+
+        {!disabled && messages.length === 0 && (
+          <div className="text-xs text-gray-500 space-y-2 mt-4 px-2">
+            <p className="text-gray-400 font-medium">이런 것들을 요청할 수 있어요:</p>
+            <div className="space-y-1.5">
+              <p>• "3번 장면을 더 긴장감 있게 고쳐줘"</p>
+              <p>• "아웃라인에서 4,5번을 합쳐줘"</p>
+              <p>• "결말을 반전으로 바꿔줘"</p>
+              <p>• "대사를 더 추가해줘"</p>
+              <p>• "이 장면의 분위기를 바꿔줘"</p>
+            </div>
+            <p className="text-gray-600 mt-3">AI가 수정을 제안하면 '적용' 버튼으로 반영할 수 있습니다.</p>
           </div>
         )}
 

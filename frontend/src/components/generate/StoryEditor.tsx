@@ -479,6 +479,10 @@ export default function StoryEditor({ addLog }: Props) {
     update({ phase: "outline" });
   }, [update]);
 
+  const resumeToReview = useCallback(() => {
+    update({ phase: "review" });
+  }, [update]);
+
   // ── Export ──
 
   const exportScript = useCallback(() => {
@@ -528,10 +532,12 @@ export default function StoryEditor({ addLog }: Props) {
         onSceneTextChange={handleSceneTextChange}
         onGenerateOutline={generateOutline}
         onApproveOutline={approveOutline}
+        onResumeToReview={resumeToReview}
         onRegenerateScene={regenerateScene}
         outlineLoading={outlineLoading}
         generatingSceneNum={generatingSceneNum}
         generatingSceneText={generatingSceneText}
+        addLog={addLog}
       />
       <StoryChatPanel
         phase={state.phase}
