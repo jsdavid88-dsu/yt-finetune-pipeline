@@ -26,21 +26,25 @@ def main():
     import json
     adapter_config = json.loads((lora_dir / "adapter_config.json").read_text(encoding="utf-8"))
     base_model_name = adapter_config.get("base_model_name_or_path", "")
-    print(f"Base model: {base_model_name}")
+    print(f"Base model (from adapter): {base_model_name}")
+
+    # Map bnb-4bit model names to their non-quantized originals
+    non_bnb_name = base_model_name.replace("-unsloth-bnb-4bit", "").replace("-bnb-4bit", "")
+    print(f"Non-quantized base: {non_bnb_name}")
 
     import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    from transformers import AutoModelForCausalLM, AutoTokenizer
     from peft import PeftModel
 
-    # Step 1: Load base model in 16bit (not quantized)
+    # Step 1: Load base model in bfloat16 (NOT quantized)
     print("\n[1/4] Loading base model in bfloat16...")
     model = AutoModelForCausalLM.from_pretrained(
-        base_model_name,
-        torch_dtype=torch.bfloat16,
+        non_bnb_name,
+        dtype=torch.bfloat16,
         device_map="auto",
         trust_remote_code=True,
     )
-    tokenizer = AutoTokenizer.from_pretrained(base_model_name, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(non_bnb_name, trust_remote_code=True)
 
     # Step 2: Load and merge LoRA
     print("\n[2/4] Loading and merging LoRA adapter...")
