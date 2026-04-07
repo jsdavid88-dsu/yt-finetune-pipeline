@@ -208,68 +208,21 @@ def main():
         model.save_pretrained(str(lora_dir))
         tokenizer.save_pretrained(str(lora_dir))
 
-        # --- GGUF 변환 (모델이 메모리에 있을 때 바로 실행) ---
-        update_progress("converting", num_epochs, num_epochs, detail="GGUF 변환 중 (10~15분 소요)...")
-        gguf_dir = output_dir / "gguf"
-        gguf_dir.mkdir(parents=True, exist_ok=True)
+        # --- GGUF 변환 via convert_gguf.py (별도 프로세스) ---
+        update_progress("converting", num_epochs, num_epochs, detail="GGUF 변환 + Ollama 등록 중...")
+        import subprocess as sp
+        scripts_dir = Path(__file__).resolve().parent
+        convert_result = sp.run(
+            [sys.executable, "-u",
+             str(scripts_dir / "convert_gguf.py"),
+             "--lora-dir", str(lora_dir)],
+        )
 
-        # NOTE: Do NOT copy the bnb-4bit config.json into gguf_dir.
-        # save_pretrained_gguf handles the merge internally and writes its own
-        # clean config.json. Copying the bnb-4bit config.json causes llama.cpp's
-        # converter to fail with:
-        #   NotImplementedError: Quant method is not yet supported: 'bitsandbytes'
-
-        import shutil
-        gguf_success = False
-        try:
-            model.save_pretrained_gguf(
-                str(gguf_dir), tokenizer, quantization_method="q4_k_m"
-            )
-            # Verify .gguf file was actually produced
-            if list(gguf_dir.glob("*.gguf")):
-                gguf_success = True
-            else:
-                print("GGUF conversion produced no .gguf files (merge may have failed silently)")
-        except Exception as gguf_err:
-            print(f"GGUF conversion failed: {gguf_err}")
-            import traceback
-            traceback.print_exc()
-
-        # --- Ollama 등록 ---
-        if gguf_success:
-            update_progress("registering", num_epochs, num_epochs, detail="Ollama에 모델 등록 중...")
-
-            ollama_base_map = {
-                "gemma-4-E4B": "gemma4",
-                "gemma-4-12B": "gemma4:12b",
-                "gemma-4-26B": "gemma4:27b",
-                "gemma-4-27B": "gemma4:27b",
-                "gemma-4-31B": "gemma4:31b",
-                "llama-3.1-8b": "llama3.1:8b",
-                "Qwen2.5-7B": "qwen2.5:7b",
-            }
-            ollama_base = "gemma4"
-            for key, val in ollama_base_map.items():
-                if key.lower() in base_model.lower():
-                    ollama_base = val
-                    break
-
-            import subprocess as sp
-            project_name = project_dir.name
-            gguf_files = list(gguf_dir.glob("*.gguf"))
-            if gguf_files:
-                modelfile_path = gguf_dir / "Modelfile"
-                modelfile_path.write_text(
-                    f"FROM {ollama_base}\nADAPTER {gguf_files[0].name}\n", encoding="utf-8"
-                )
-                sp.run(
-                    ["ollama", "create", f"storyforge-{project_name}", "-f", str(modelfile_path)],
-                    cwd=str(gguf_dir),
-                )
+        if convert_result.returncode == 0:
             update_progress("completed", num_epochs, num_epochs, detail="학습 완료! 모델 등록됨")
         else:
             update_progress("completed", num_epochs, num_epochs,
-                            detail="학습 완료! (GGUF 변환 실패 — llama.cpp 업데이트 필요)")
+                            detail="학습 완료! (GGUF 변환 실패 — convert.bat으로 수동 변환)")
     except Exception as exc:
         update_progress("failed", error=str(exc))
         sys.exit(1)

@@ -117,52 +117,76 @@
 - **증상**: `Failed to install Kitware.CMake via winget`
 - **해결**: `winget install Kitware.CMake`, cmd 새로 열어야 PATH 반영
 
-### 3-8. 5090 PC에서 github.com 간헐적 접속 불가
+### 3-8. Windows 파일 잠금 (os error 1224) — merge 실패
+- **증상**: `Error while serializing: I/O error: 사용자가 매핑한 구역이 열려 있는 상태`
+- **원인**: Unsloth이 safetensors를 메모리 매핑(mmap)으로 읽으면서 같은 파일에 쓰려고 함. Windows가 잠금.
+- **해결**: Unsloth/PEFT의 merge 완전 우회. LoRA 가중치를 직접 수학적으로 합침:
+  ```python
+  # W = W + scaling * (B @ A)
+  A = lora_weights["...lora_A..."]
+  B = lora_weights["...lora_B..."]
+  param.weight.data += (B @ A) * (lora_alpha / lora_r)
+  ```
+  새 폴더에 저장 → llama.cpp로 GGUF 변환
+- **시스템 반영**: `convert_gguf.py`에 수동 merge 구현
+
+### 3-9. 5090 PC에서 github.com 간헐적 접속 불가
 - **증상**: `Could not resolve host: github.com`
 - **원인**: 학교 네트워크 DNS 불안정
 - **해결**: 2~3번 재시도하면 됨, 영구 해결은 DNS를 8.8.8.8로 변경
 
 ---
 
-## 4. Ollama 등록 — 최종 권장 방법 (2026-04-07 기준)
+## 4. Ollama 등록 — 최종 권장 방법 (2026-04-08 기준)
 
-Gemma 4 LoRA 학습 후 Ollama 등록 방법 (우선순위):
+Gemma 4 LoRA 학습 후 Ollama 등록. **방법 1이 유일하게 검증됨.**
 
-### 방법 1: Ollama ADAPTER import (가장 간단)
+### 방법 1: 수동 LoRA merge + llama.cpp GGUF 변환 (검증됨 ✅)
+
+Unsloth/PEFT의 merge를 사용하지 않고 LoRA 가중치를 직접 합침.
+
+```python
+# 1. transformers로 베이스 모델 CPU 로드
+model = AutoModelForCausalLM.from_pretrained(base_model, dtype=torch.bfloat16, device_map="cpu")
+
+# 2. LoRA A/B 가중치 직접 읽기
+from safetensors.torch import load_file
+lora_weights = load_file("adapter_model.safetensors", device="cpu")
+
+# 3. 수동 merge: W = W + scaling * (B @ A)
+scaling = lora_alpha / lora_r
+param.weight.data += (B @ A) * scaling
+
+# 4. merged 모델 저장
+model.save_pretrained("merged_full", safe_serialization=True)
+
+# 5. llama.cpp로 GGUF 변환
+# python convert_hf_to_gguf.py --outtype bf16 merged_full
+# llama-quantize model-bf16.gguf model-q4_k_m.gguf q4_k_m
+
+# 6. Ollama 등록
+# Modelfile: FROM model-q4_k_m.gguf
+# ollama create storyforge-myproject -f Modelfile
 ```
-# Modelfile
+
+시스템 반영: `convert_gguf.py` + `convert.bat`
+
+### 방법 2: Ollama ADAPTER import (Gemma4 미지원 ❌)
+```
 FROM gemma4
-ADAPTER /absolute/path/to/lora/adapter/directory/
+ADAPTER /path/to/lora/
 ```
-```bash
-ollama create storyforge-myproject -f Modelfile
-```
-- LoRA adapter 폴더에 `adapter_model.safetensors` + `adapter_config.json` 필요
-- Ollama가 Gemma4 adapter를 지원하는지 버전에 따라 다름
+- Ollama 0.20.2 기준 Gemma4 LoRA adapter 미지원
+- "no Modelfile or safetensors files found" 에러
 
-### 방법 2: Full merge → Ollama import
-```python
-# 원본 모델(non-bnb)을 bfloat16으로 로드
-model = AutoModelForCausalLM.from_pretrained("unsloth/gemma-4-E4B-it", dtype=torch.bfloat16)
-model = PeftModel.from_pretrained(model, "path/to/lora")
-model = model.merge_and_unload()
-model.save_pretrained("merged_full")
-```
-```
-# Modelfile
-FROM /path/to/merged_full/
-```
-```bash
-ollama create storyforge-myproject -f Modelfile --experimental -q q4_K_M
-```
+### 방법 3: Unsloth save_pretrained_gguf (버그 ❌)
+- 4bit 학습: merge가 safetensors를 안 만듦 (경고만 찍고 건너뜀)
+- 16bit 학습: Windows에서 파일 잠금 에러 (os error 1224)
+- config.json 누락 문제도 있음
 
-### 방법 3: Unsloth save_pretrained_gguf (직접)
-```python
-# 학습 직후, merge 없이 바로 호출
-model.save_pretrained_gguf("output_dir", tokenizer, quantization_method="q4_k_m")
-```
-- config.json이 output_dir에 있어야 함
-- llama.cpp 최신 버전 필요 (Gemma4 지원)
+### 방법 4: PEFT merge_and_unload (Gemma4 미지원 ❌)
+- `Gemma4ClippableLinear is not supported` 에러
+- unsloth/ 모델뿐 아니라 google/ 원본 모델도 동일 (transformers 5.5.0이 커스텀 레이어 사용)
 
 ---
 
