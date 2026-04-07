@@ -19,27 +19,40 @@ exit /b 1
 
 :found
 echo Found LoRA: %LORA_DIR%
-
-echo Creating Modelfile...
-echo FROM gemma4> "%LORA_DIR%\Modelfile"
-echo ADAPTER %LORA_DIR%>> "%LORA_DIR%\Modelfile"
-
-echo Modelfile:
-type "%LORA_DIR%\Modelfile"
 echo.
 
-echo Registering with Ollama (experimental safetensors)...
-ollama create storyforge-%PROJECT% -f "%LORA_DIR%\Modelfile" --experimental -q q4_K_M
+echo Method 1: Ollama experimental safetensors import...
+ollama create storyforge-%PROJECT% %LORA_DIR% --experimental -q q4_K_M 2>nul
+if not errorlevel 1 goto :success
 
-if errorlevel 1 (
-    echo.
-    echo ERROR - Registration failed
-) else (
-    echo.
-    echo === Done! ===
-    echo Model: storyforge-%PROJECT%
-    echo Test: ollama run storyforge-%PROJECT%
-)
+echo Method 1 failed. Trying Method 2...
+echo.
 
+echo Creating Modelfile with Ollama model reference...
+echo FROM gemma4:latest> "%LORA_DIR%\Modelfile"
+echo ADAPTER %LORA_DIR%>> "%LORA_DIR%\Modelfile"
+
+ollama create storyforge-%PROJECT% -f "%LORA_DIR%\Modelfile" 2>nul
+if not errorlevel 1 goto :success
+
+echo Method 2 failed. Trying Method 3 (no experimental)...
+echo.
+
+ollama create storyforge-%PROJECT% -f "%LORA_DIR%\Modelfile" --experimental 2>nul
+if not errorlevel 1 goto :success
+
+echo.
+echo All methods failed.
+echo Try manually: ollama create storyforge-%PROJECT% %LORA_DIR%
+echo.
+pause
+exit /b 1
+
+:success
+echo.
+echo === Done! ===
+echo Model: storyforge-%PROJECT%
+echo.
+echo Test it: ollama run storyforge-%PROJECT% "hello"
 echo.
 pause
