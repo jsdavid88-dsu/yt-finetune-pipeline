@@ -39,11 +39,18 @@ def main():
         load_in_4bit=True,
     )
 
-    print("\n[2/2] Converting to GGUF (q4_k_m)...")
+    # First save merged model to gguf_dir (avoids Windows file locking on lora_dir)
+    print("\n[2/2] Saving merged model + GGUF conversion...")
     print("  This may take 10-15 minutes...")
-    # Output to lora_dir itself (has config.json already)
+
+    # Save merged 16bit first, then GGUF
+    model.save_pretrained_merged(
+        str(gguf_dir), tokenizer, save_method="merged_16bit",
+    )
+
+    # Now convert the merged model to GGUF
     model.save_pretrained_gguf(
-        str(lora_dir), tokenizer, quantization_method="q4_k_m"
+        str(gguf_dir), tokenizer, quantization_method="q4_k_m"
     )
 
     # Move gguf files to gguf_dir
