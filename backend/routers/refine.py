@@ -40,6 +40,7 @@ from services.refine_service import (
     build_4task_jsonl,
     DEFAULT_ANALYSIS,
     is_korean_text,
+    translate_title_if_needed,
 )
 
 router = APIRouter(prefix="/api/refine", tags=["refine"])
@@ -176,6 +177,8 @@ async def _run_auto_process(
                     job.processed = global_index
                 continue
 
+            # Translate non-Korean titles
+            ep_title = await translate_title_if_needed(ep_title, model=effective_model)
             logger.info(f"[정제] 에피소드 {ep_idx+1}/{len(episode_chunks_map)}: {ep_title[:50]}")
             episode_chunk_data: list[dict] = []
 

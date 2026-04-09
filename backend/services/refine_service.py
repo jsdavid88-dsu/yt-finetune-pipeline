@@ -31,6 +31,31 @@ DEFAULT_ANALYSIS = {
 }
 
 
+async def translate_title_if_needed(title: str, model: str = "gemma4") -> str:
+    """Translate title to Korean if it's not Korean."""
+    if not title.strip():
+        return title
+    if is_korean_text(title, threshold=0.2):
+        return title
+    # Non-Korean title — translate
+    payload = {
+        "model": model,
+        "prompt": f"다음 제목을 한국어로 번역해줘. 번역된 제목만 출력해:\n{title}",
+        "stream": False,
+        "options": {"temperature": 0.1, "num_predict": 100},
+    }
+    try:
+        async with httpx.AsyncClient(base_url=OLLAMA_BASE, timeout=TIMEOUT) as client:
+            resp = await client.post("/api/generate", json=payload)
+            resp.raise_for_status()
+            translated = resp.json().get("response", "").strip()
+            if translated and is_korean_text(translated, threshold=0.2):
+                return translated
+    except Exception:
+        pass
+    return title
+
+
 def is_korean_text(text: str, threshold: float = 0.3) -> bool:
     """Check if text is predominantly Korean (at least threshold ratio of Korean chars)."""
     if not text.strip():
