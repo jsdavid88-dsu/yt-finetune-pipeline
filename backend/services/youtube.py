@@ -16,8 +16,6 @@ import yt_dlp
 LANG_PREF = [
     ("ko", False),   # manual Korean
     ("ko", True),    # auto Korean
-    ("en", False),   # manual English
-    ("en", True),    # auto English
 ]
 
 
@@ -26,7 +24,7 @@ LANG_PREF = [
 # ---------------------------------------------------------------------------
 
 def _pick_subtitle(info: dict) -> Optional[tuple[str, str]]:
-    """Return (lang_key, url) for the best subtitle track, or None."""
+    """Return (lang_key, url) for the best Korean subtitle track, or None."""
     subs: dict = info.get("subtitles") or {}
     auto_subs: dict = info.get("automatic_captions") or {}
 
@@ -34,22 +32,13 @@ def _pick_subtitle(info: dict) -> Optional[tuple[str, str]]:
         source = auto_subs if is_auto else subs
         if lang in source:
             formats = source[lang]
-            # prefer vtt, then srt, then first available
             for fmt_name in ("vtt", "srt"):
                 for f in formats:
                     if f.get("ext") == fmt_name:
                         return (lang, f["url"])
             if formats:
                 return (lang, formats[0]["url"])
-    # fallback: any manual sub, then any auto sub
-    for source in (subs, auto_subs):
-        for lang_key, formats in source.items():
-            if formats:
-                for fmt_name in ("vtt", "srt"):
-                    for f in formats:
-                        if f.get("ext") == fmt_name:
-                            return (lang_key, f["url"])
-                return (lang_key, formats[0]["url"])
+    # No Korean subtitle found
     return None
 
 
