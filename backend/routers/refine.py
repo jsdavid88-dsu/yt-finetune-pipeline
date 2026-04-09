@@ -39,6 +39,7 @@ from services.refine_service import (
     analyze_chunk,
     build_4task_jsonl,
     DEFAULT_ANALYSIS,
+    is_korean_text,
 )
 
 router = APIRouter(prefix="/api/refine", tags=["refine"])
@@ -166,6 +167,15 @@ async def _run_auto_process(
         global_index = 0
 
         for ep_idx, (ep_title, ep_chunks) in enumerate(episode_chunks_map):
+            # Skip non-Korean episodes
+            ep_sample = " ".join(ep_chunks[:3])[:500]
+            if not is_korean_text(ep_sample):
+                logger.info(f"[정제] 에피소드 {ep_idx+1} 건너뜀 (한국어 아님): {ep_title[:50]}")
+                for c in ep_chunks:
+                    global_index += 1
+                    job.processed = global_index
+                continue
+
             logger.info(f"[정제] 에피소드 {ep_idx+1}/{len(episode_chunks_map)}: {ep_title[:50]}")
             episode_chunk_data: list[dict] = []
 

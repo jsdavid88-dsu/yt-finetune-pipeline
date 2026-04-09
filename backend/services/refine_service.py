@@ -31,6 +31,17 @@ DEFAULT_ANALYSIS = {
 }
 
 
+def is_korean_text(text: str, threshold: float = 0.3) -> bool:
+    """Check if text is predominantly Korean (at least threshold ratio of Korean chars)."""
+    if not text.strip():
+        return False
+    korean_count = sum(1 for c in text if '\uac00' <= c <= '\ud7a3' or '\u3131' <= c <= '\u3163')
+    alpha_count = sum(1 for c in text if c.isalpha())
+    if alpha_count == 0:
+        return False
+    return (korean_count / alpha_count) >= threshold
+
+
 # ---------------------------------------------------------------------------
 # 1. chunk_text
 # ---------------------------------------------------------------------------
