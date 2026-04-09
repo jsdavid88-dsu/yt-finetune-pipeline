@@ -55,11 +55,16 @@ class VideoInfo(BaseModel):
 
 
 class CollectJob(BaseModel):
+    model_config = {"arbitrary_types_allowed": True}
     job_id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
     project_id: str
     url: str
     status: JobStatus = JobStatus.pending
     videos: list[VideoInfo] = []
+    total: int = 0
+    processed: int = 0
+    error: Optional[str] = None
+    _finished_at: float = 0.0
     created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
 
 

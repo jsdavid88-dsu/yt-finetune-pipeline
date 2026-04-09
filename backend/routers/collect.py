@@ -209,7 +209,6 @@ async def _run_collect_job(job: CollectJob, top_percent: int | None = None, max_
             if job.job_id in _cancelled_jobs:
                 _cancelled_jobs.discard(job.job_id)
                 job.status = JobStatus.failed
-                job._finished_at = time.time()
                 job.error = f"사용자가 수집을 중지했습니다. ({idx}/{len(uncollected)} 완료)"
                 return
 
