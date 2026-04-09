@@ -136,17 +136,38 @@ async def download_subtitle_async(url: str) -> str:
 # High-level API
 # ---------------------------------------------------------------------------
 
-async def get_video_entries(url: str) -> list[dict]:
-    """Return a list of video info dicts. Works for single videos and playlists."""
-    info = await extract_info_async(url, playlist=True)
+def _extract_flat(url: str) -> list[dict]:
+    """Fast extraction — gets only video IDs, titles, view counts. No subtitle info."""
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "skip_download": True,
+        "extract_flat": "in_playlist",
+        "ignoreerrors": True,
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
     if info is None:
         return []
-    # playlist
     if info.get("_type") == "playlist" or "entries" in info:
-        entries = info.get("entries") or []
-        return [e for e in entries if e is not None]
-    # single video
+        return [e for e in (info.get("entries") or []) if e is not None]
     return [info]
+
+
+async def get_video_entries(url: str) -> list[dict]:
+    """Return a list of video info dicts (flat/fast mode for playlists)."""
+    loop = asyncio.get_event_loop()
+    entries = await loop.run_in_executor(None, lambda: _extract_flat(url))
+    return entries
+
+
+async def get_video_full_info(video_id: str) -> dict | None:
+    """Get full info for a single video (including subtitles)."""
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    try:
+        return await extract_info_async(url, playlist=False)
+    except Exception:
+        return None
 
 
 async def extract_subtitle_for_video(info: dict) -> tuple[Optional[str], Optional[str]]:

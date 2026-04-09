@@ -25,7 +25,7 @@ from models.schemas import (
     VideoInfo,
     VideoStatus,
 )
-from services.youtube import extract_subtitle_for_video, get_video_entries
+from services.youtube import extract_subtitle_for_video, get_video_entries, get_video_full_info
 
 router = APIRouter(prefix="/api/collect", tags=["collect"])
 
@@ -182,7 +182,11 @@ async def _run_collect_job(job: CollectJob, top_percent: int | None = None, max_
             vid.status = VideoStatus.processing
             logger.info(f"[수집] {idx+1}/{len(entries)} 처리 중: {vid.title[:50]}")
             try:
-                text, route = await extract_subtitle_for_video(entry)
+                # Get full video info (flat mode only has ID/title)
+                full_entry = await get_video_full_info(vid.video_id)
+                if full_entry is None:
+                    full_entry = entry
+                text, route = await extract_subtitle_for_video(full_entry)
                 if text:
                     vid.text = text
                     vid.route = SubtitleRoute(route)
@@ -198,7 +202,8 @@ async def _run_collect_job(job: CollectJob, top_percent: int | None = None, max_
                     vid.error = f"Rate limited, {_RATE_LIMIT_WAIT}초 대기 후 재시도..."
                     await asyncio.sleep(_RATE_LIMIT_WAIT)
                     try:
-                        text, route = await extract_subtitle_for_video(entry)
+                        full_entry2 = await get_video_full_info(vid.video_id)
+                        text, route = await extract_subtitle_for_video(full_entry2 or entry)
                         if text:
                             vid.text = text
                             vid.route = SubtitleRoute(route)
