@@ -10,7 +10,7 @@ from typing import Any
 import httpx
 
 OLLAMA_BASE = "http://localhost:11434"
-TIMEOUT = httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0)
+TIMEOUT = httpx.Timeout(connect=10.0, read=600.0, write=10.0, pool=10.0)
 
 DEFAULT_TAGS = {
     "genre": "미분류",

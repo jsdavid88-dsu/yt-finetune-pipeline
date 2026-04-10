@@ -154,7 +154,6 @@ async def _run_collect_job(job: CollectJob, top_percent: int | None = None, max_
 
             if not video_list:
                 job.status = JobStatus.failed
-                job._finished_at = time.time()
                 job.error = "영상 목록을 가져올 수 없습니다."
                 return
 
@@ -177,7 +176,6 @@ async def _run_collect_job(job: CollectJob, top_percent: int | None = None, max_
         if not uncollected:
             logger.info(f"[수집] 모든 영상이 이미 수집됨")
             job.status = JobStatus.completed
-            job._finished_at = time.time()
             return
 
         # Apply max_count to uncollected only
@@ -274,7 +272,6 @@ async def _run_collect_job(job: CollectJob, top_percent: int | None = None, max_
                 await asyncio.sleep(_COLLECT_DELAY)
 
         job.status = JobStatus.completed
-        job._finished_at = time.time()
 
         done_count = len([v for v in job.videos if v.status == VideoStatus.done])
         remaining = len(video_list) - len(collected_ids) - done_count
@@ -282,8 +279,11 @@ async def _run_collect_job(job: CollectJob, top_percent: int | None = None, max_
 
     except Exception as exc:
         job.status = JobStatus.failed
-        job._finished_at = time.time()
         job.error = str(exc)
+    finally:
+        # Always stamp finish time so _cleanup_jobs can TTL the job correctly
+        if job.status in (JobStatus.completed, JobStatus.failed):
+            job._finished_at = time.time()
 
 
 # ---------------------------------------------------------------------------

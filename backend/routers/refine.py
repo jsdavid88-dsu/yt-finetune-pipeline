@@ -338,7 +338,12 @@ async def get_jsonl(project_id: str):
 
 @router.put("/chunk-tag/{project_id}/{chunk_index}")
 async def update_chunk_tag(project_id: str, chunk_index: int, tags: dict[str, str]):
-    """Manually update tags for a specific chunk and regenerate JSONL."""
+    """Manually update tags for a specific chunk.
+
+    NOTE: 4-Task 자동 파이프라인은 chunks[*].analysis 를 사용하므로,
+    여기서는 chunks.json 의 tags 만 갱신하고 dataset.jsonl 은 건드리지 않습니다.
+    수동 편집을 학습 데이터에 반영하려면 /auto-process 를 다시 실행하세요.
+    """
     proj_dir = _project_dir(project_id)
     chunks_path = proj_dir / "chunks.json"
     if not chunks_path.exists():
@@ -361,16 +366,11 @@ async def update_chunk_tag(project_id: str, chunk_index: int, tags: dict[str, st
         json.dumps(chunks, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
-    # Regenerate JSONL
-    preset = _load_project_preset(project_id)
-    generation_prompt = preset.get("generation_prompt", "다음 에피소드를 이어서 써줘.")
-    jsonl_str = build_jsonl(
-        [{"text": c["text"], "tags": c.get("tags", {})} for c in chunks],
-        generation_prompt,
-    )
-    (proj_dir / "dataset.jsonl").write_text(jsonl_str, encoding="utf-8")
-
-    return {"ok": True, "chunk_index": chunk_index}
+    return {
+        "ok": True,
+        "chunk_index": chunk_index,
+        "note": "chunks.json만 갱신했습니다. dataset.jsonl 에 반영하려면 auto-process 를 재실행하세요.",
+    }
 
 
 # ---------------------------------------------------------------------------
