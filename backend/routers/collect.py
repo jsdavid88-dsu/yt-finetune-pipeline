@@ -25,7 +25,10 @@ from models.schemas import (
 )
 from services.youtube import extract_subtitle_for_video, get_video_entries, get_video_full_info
 
+# Ensure storyforge loggers propagate to root and are visible
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("storyforge.collect")
+logger.setLevel(logging.INFO)
 
 router = APIRouter(prefix="/api/collect", tags=["collect"])
 
@@ -399,6 +402,95 @@ async def get_video_list(project_id: str):
         "collected": len(collected_ids),
         "remaining": len(video_list) - len(collected_ids),
     }
+
+
+@router.get("/video-list-full/{project_id}")
+async def get_video_list_full(project_id: str):
+    """Return ALL videos from video_list.json merged with collection status."""
+    project_dir = DATA_DIR / project_id
+    if not project_dir.exists():
+        return {"total": 0, "collected": 0, "remaining": 0, "videos": []}
+
+    video_list = _load_video_list(project_dir)
+    collected_ids = _load_collected_ids(project_dir)
+
+    # Load full collected data for text/route info
+    collected_map: dict[str, dict] = {}
+    videos_path = project_dir / "videos.json"
+    if videos_path.exists():
+        with open(videos_path, "r", encoding="utf-8") as f:
+            for v in json.load(f):
+                collected_map[v.get("video_id", "")] = v
+
+    videos = []
+    for entry in video_list:
+        vid_id = entry.get("id", "")
+        if vid_id in collected_ids:
+            cv = collected_map.get(vid_id, {})
+            videos.append({
+                "video_id": vid_id,
+                "title": entry.get("title", cv.get("title", "Untitled")),
+                "view_count": entry.get("view_count", 0) or 0,
+                "duration": entry.get("duration", 0) or 0,
+                "status": "done",
+                "text": cv.get("text", "")[:200],
+                "route": cv.get("route"),
+                "error": None,
+            })
+        else:
+            videos.append({
+                "video_id": vid_id,
+                "title": entry.get("title", "Untitled"),
+                "view_count": entry.get("view_count", 0) or 0,
+                "duration": entry.get("duration", 0) or 0,
+                "status": "waiting",
+                "text": "",
+                "route": None,
+                "error": None,
+            })
+
+    return {
+        "total": len(video_list),
+        "collected": len(collected_ids),
+        "remaining": len(video_list) - len(collected_ids),
+        "videos": videos,
+    }
+
+
+@router.post("/resume/{project_id}")
+async def resume_collection(project_id: str, max_count: int | None = None):
+    """Resume collection for uncollected videos without re-fetching the list."""
+    projects = _load_projects()
+    if not any(p["id"] == project_id for p in projects):
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if project_id in _running_projects:
+        raise HTTPException(status_code=409, detail="Collection already running for this project")
+
+    project_dir = _ensure_project_dir(project_id)
+    video_list = _load_video_list(project_dir)
+    if not video_list:
+        raise HTTPException(status_code=400, detail="No video list found. Run a full collection first.")
+
+    collected_ids = _load_collected_ids(project_dir)
+    remaining = len(video_list) - len(collected_ids)
+    if remaining <= 0:
+        return {"status": "all_collected", "message": "All videos already collected."}
+
+    # Build a dummy URL (not used since video_list already exists)
+    _cleanup_jobs()
+    job = CollectJob(project_id=project_id, url="__resume__")
+    _jobs[job.job_id] = job
+    _running_projects.add(project_id)
+
+    async def _guarded_collect(j: CollectJob, mc: int | None) -> None:
+        try:
+            await _run_collect_job(j, top_percent=None, max_count=mc)
+        finally:
+            _running_projects.discard(j.project_id)
+
+    asyncio.create_task(_guarded_collect(job, max_count))
+    return {"job_id": job.job_id, "status": job.status, "remaining": remaining}
 
 
 # ---------------------------------------------------------------------------

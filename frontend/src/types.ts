@@ -38,6 +38,7 @@ export interface CollectJob {
   videos: Video[];
   progress: number;
   total: number;
+  error?: string | null;
 }
 
 export interface ChunkTag {

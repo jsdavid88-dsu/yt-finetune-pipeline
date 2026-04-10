@@ -27,6 +27,8 @@ interface ExtendedTrainProgress extends TrainProgress {
   setup_step?: number;
   setup_total?: number;
   eval_loss?: number | null;
+  step?: number;
+  total_steps?: number;
 }
 
 interface Props {
@@ -63,18 +65,37 @@ export default function TrainTab({ project, addLog }: Props) {
   const [config, setConfig] = useState<TrainConfig>(defaultConfig);
   const [progress, setProgress] = useState<ExtendedTrainProgress | null>(null);
   const [losses, setLosses] = useState<number[]>([]);
+  const [trainingStartTime, setTrainingStartTime] = useState<number | null>(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isActive =
     progress !== null &&
     !['idle', 'completed', 'failed'].includes(progress.status as string);
 
-  // Cleanup polling on unmount
+  // Cleanup polling and timer on unmount
   useEffect(() => {
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
+      if (timerRef.current) clearInterval(timerRef.current);
     };
   }, []);
+
+  // Elapsed time ticker — runs every second while training is active
+  useEffect(() => {
+    if (trainingStartTime != null) {
+      timerRef.current = setInterval(() => {
+        setElapsedSeconds(Math.floor((Date.now() - trainingStartTime) / 1000));
+      }, 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+      setElapsedSeconds(0);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [trainingStartTime]);
 
   // On mount: GPU check + load models + load default config
   useEffect(() => {
@@ -111,9 +132,14 @@ export default function TrainTab({ project, addLog }: Props) {
           setup_step: raw.setup_step,
           setup_total: raw.setup_total,
           eval_loss: typeof raw.eval_loss === 'number' ? raw.eval_loss : null,
+          step: typeof raw.step === 'number' ? raw.step : undefined,
+          total_steps: typeof raw.total_steps === 'number' ? raw.total_steps : undefined,
         };
         if (ext.status !== 'idle') {
           setProgress(ext);
+          if (ext.status === 'training' && trainingStartTime == null) {
+            setTrainingStartTime(Date.now());
+          }
           if (ext.loss !== null && typeof ext.loss === 'number') {
             setLosses((prev) => [...prev, ext.loss!]);
           }
@@ -142,16 +168,23 @@ export default function TrainTab({ project, addLog }: Props) {
           setup_step: raw?.setup_step,
           setup_total: raw?.setup_total,
           eval_loss: typeof raw?.eval_loss === 'number' ? raw.eval_loss : null,
+          step: typeof raw?.step === 'number' ? raw.step : undefined,
+          total_steps: typeof raw?.total_steps === 'number' ? raw.total_steps : undefined,
         };
         setProgress(s);
+        if (s.status === 'training') {
+          setTrainingStartTime((prev) => prev ?? Date.now());
+        }
         if (s.loss !== null && typeof s.loss === 'number') {
           setLosses((prev) => [...prev, s.loss!]);
         }
         if (s.status === 'completed') {
           if (pollRef.current) clearInterval(pollRef.current);
+          setTrainingStartTime(null);
           addLog('success', 'Training complete! Model registered in Ollama.');
         } else if (s.status === 'failed') {
           if (pollRef.current) clearInterval(pollRef.current);
+          setTrainingStartTime(null);
           addLog('error', `Training failed: ${s.error || 'Unknown error'}`);
         }
       } catch {
@@ -171,6 +204,7 @@ export default function TrainTab({ project, addLog }: Props) {
     }
 
     setLosses([]);
+    setTrainingStartTime(null);
     setProgress({ status: 'starting', epoch: 0, total_epochs: config.num_epochs, progress: 0, loss: null, error: null });
     addLog('info', `학습 시작: ${selectedModel}, ${config.num_epochs} 에포크`);
 
@@ -193,6 +227,7 @@ export default function TrainTab({ project, addLog }: Props) {
       await trainStop(project.id);
       if (pollRef.current) clearInterval(pollRef.current);
       setProgress(null);
+      setTrainingStartTime(null);
       addLog('warn', '학습이 중지되었습니다.');
     } catch (err: any) {
       addLog('error', `학습 중지 실패: ${err.message}`);
@@ -202,6 +237,7 @@ export default function TrainTab({ project, addLog }: Props) {
   const handleRetry = () => {
     setProgress(null);
     setLosses([]);
+    setTrainingStartTime(null);
   };
 
   const progressPercent = progress ? Math.round(progress.progress * 100) : 0;
@@ -352,10 +388,11 @@ export default function TrainTab({ project, addLog }: Props) {
             losses={losses}
             currentEpoch={progress?.epoch ?? 0}
             totalEpochs={progress?.total_epochs ?? config.num_epochs}
-            step={(progress as any)?.step ?? 0}
-            totalSteps={(progress as any)?.total_steps ?? 0}
+            step={progress?.step ?? 0}
+            totalSteps={progress?.total_steps ?? 0}
             detail={progress?.detail || ''}
             isTraining={isActive}
+            elapsedSeconds={elapsedSeconds}
           />
         </div>
       </div>

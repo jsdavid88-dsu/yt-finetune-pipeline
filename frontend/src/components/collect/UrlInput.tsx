@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Play, Link, ListVideo, Search, Filter } from 'lucide-react';
+import { Play, Link, ListVideo, Search, Filter, Repeat } from 'lucide-react';
 
 interface PlaylistPreview {
   count: number;
@@ -10,6 +10,8 @@ interface Props {
   onSubmit: (url: string, playlist: boolean, topPercent: number | null, maxCount: number | null) => void;
   loading: boolean;
   onPreview?: (url: string) => Promise<PlaylistPreview | null>;
+  autoRepeat?: boolean;
+  onAutoRepeatChange?: (value: boolean) => void;
 }
 
 const FILTER_OPTIONS = [
@@ -25,7 +27,7 @@ function formatViews(n: number): string {
   return `${n}`;
 }
 
-export default function UrlInput({ onSubmit, loading, onPreview }: Props) {
+export default function UrlInput({ onSubmit, loading, onPreview, autoRepeat, onAutoRepeatChange }: Props) {
   const [url, setUrl] = useState('');
   const [playlist, setPlaylist] = useState(false);
   const [topPercent, setTopPercent] = useState<number | null>(null);
@@ -135,18 +137,32 @@ export default function UrlInput({ onSubmit, loading, onPreview }: Props) {
 
         {/* Max count */}
         <div className="flex items-center gap-2 text-sm text-gray-400">
-          <span className="text-xs">최대</span>
+          <span className="text-xs">{'\ucd5c\ub300'}</span>
           <input
             type="number"
             value={maxCount ?? ''}
             onChange={(e) => setMaxCount(e.target.value ? Number(e.target.value) : null)}
-            placeholder="전체"
+            placeholder={'\uc804\uccb4'}
             className="w-16 bg-gray-800 border border-gray-700 rounded px-2 py-1 text-sm text-gray-300"
             min={1}
             disabled={loading}
           />
-          <span className="text-xs text-gray-500">개</span>
+          <span className="text-xs text-gray-500">{'\uac1c'}</span>
         </div>
+
+        {/* Auto-repeat checkbox */}
+        {onAutoRepeatChange && (
+          <label className="flex items-center gap-2 text-sm text-gray-400 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={autoRepeat ?? false}
+              onChange={(e) => onAutoRepeatChange(e.target.checked)}
+              className="w-4 h-4 rounded bg-gray-800 border-gray-600 text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
+            />
+            <Repeat size={14} />
+            {'\uc790\ub3d9 \ubc18\ubcf5 (100\uac1c\uc529)'}
+          </label>
+        )}
       </div>
 
       {/* Preview results */}

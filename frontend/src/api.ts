@@ -73,6 +73,20 @@ export async function getProjectVideos(
   return request(`/api/collect/videos/${projectId}`);
 }
 
+export async function getVideoListFull(
+  projectId: string
+): Promise<{ total: number; collected: number; remaining: number; videos: any[] }> {
+  return request(`/api/collect/video-list-full/${projectId}`);
+}
+
+export async function collectResume(
+  projectId: string,
+  maxCount?: number | null,
+): Promise<{ job_id: string; status: string; remaining: number }> {
+  const params = maxCount ? `?max_count=${maxCount}` : '';
+  return request(`/api/collect/resume/${projectId}${params}`, { method: 'POST' });
+}
+
 // ── Refine ───────────────────────────────────────────────
 export async function refineDeduplicate(
   projectId: string,

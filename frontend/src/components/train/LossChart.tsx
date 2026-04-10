@@ -8,6 +8,13 @@ interface Props {
   totalSteps: number;
   detail: string;
   isTraining: boolean;
+  elapsedSeconds?: number;
+}
+
+function formatElapsed(totalSec: number): string {
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
 }
 
 export default function LossChart({
@@ -18,6 +25,7 @@ export default function LossChart({
   totalSteps,
   detail,
   isTraining,
+  elapsedSeconds,
 }: Props) {
   if (!isTraining && losses.length === 0) {
     return (
@@ -50,8 +58,11 @@ export default function LossChart({
           학습 손실 (Loss)
         </div>
         <div className="flex items-center gap-4 text-xs text-gray-500">
-          {totalSteps > 0 && <span>Step: {step}/{totalSteps}</span>}
+          {totalSteps > 0 && <span>Step {step}/{totalSteps}</span>}
           <span>에포크: {currentEpoch}/{totalEpochs}</span>
+          {elapsedSeconds != null && elapsedSeconds > 0 && (
+            <span>경과: {formatElapsed(elapsedSeconds)}</span>
+          )}
         </div>
       </div>
 
